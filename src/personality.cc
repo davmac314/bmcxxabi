@@ -1,0 +1,445 @@
+// From https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html
+//
+// With information from:
+// https://www.airs.com/blog/archives/date/2011/01
+
+#include <cstdint>
+#include <cstring>
+#include <cstdlib>
+
+#include <unwind.h>
+
+#include "cxa_exception.h"
+
+/*
+typedef enum
+{
+    _URC_NO_REASON, _URC_FOREIGN_EXCEPTION_CAUGHT = 1, _URC_FATAL_PHASE2_ERROR = 2,
+    _URC_FATAL_PHASE1_ERROR = 3, _URC_NORMAL_STOP = 4, _URC_END_OF_STACK = 5,
+    _URC_HANDLER_FOUND = 6, _URC_INSTALL_CONTEXT = 7, _URC_CONTINUE_UNWIND = 8
+}
+_Unwind_Reason_Code;
+
+
+typedef void (*_Unwind_Exception_Cleanup_Fn)(_Unwind_Reason_Code reason,
+            struct _Unwind_Exception *exc);
+
+struct _Unwind_Exception {
+    uint64_t   exception_class;
+    _Unwind_Exception_Cleanup_Fn exception_cleanup;
+    uint64_t  private_1;
+    uint64_t  private_2;
+};
+
+
+typedef int _Unwind_Action;
+static const _Unwind_Action _UA_SEARCH_PHASE = 1;
+static const _Unwind_Action _UA_CLEANUP_PHASE = 2;
+static const _Unwind_Action _UA_HANDLER_FRAME = 4;
+static const _Unwind_Action _UA_FORCE_UNWIND = 8;
+// static const _Unwind_Action _UA_END_OF_STACK = 16;
+
+struct _Unwind_Context;
+
+*/
+
+namespace {
+
+// DWARF encodings. These specify how a value is encoded, and what it is relative to
+enum {
+  DW_EH_PE_absptr = 0,  // (not relative)
+  
+  // value encodings  
+  DW_EH_PE_uleb128 = 1,  // variable-length unsigned
+  DW_EH_PE_udata2 = 2,   // 2-byte unsigned
+  DW_EH_PE_udata4 = 3,   // 4-byte unsigned
+  DW_EH_PE_udata8 = 4,   // 8-byte unsigned
+  
+  DW_EH_PE_sleb128 = 9,  // variable-length signed
+  DW_EH_PE_sdata2 = 10,  // 2-byte signed
+  DW_EH_PE_sdata4 = 11,  // 4-byte signed
+  DW_EH_PE_sdata8 = 12,  // 8-byte signed
+
+  // What is it relative to?
+  DW_EH_PE_pcrel = 0x10,
+  DW_EH_PE_textrel = 0x20,
+  DW_EH_PE_datarel = 0x30,
+  DW_EH_PE_funcrel = 0x40,
+  DW_EH_PE_aligned = 0x50,  // ??
+  
+  DW_EH_PE_indirect = 0x80, // value is indirect, i.e. specifies address holding value
+  
+  DW_EH_PE_omit = 0xFF  // no value
+};
+
+template <typename T>
+T read_dwarf_val(const uint8_t *& p)
+{
+    T val;
+    memcpy(&val, p, sizeof(T));
+    p += sizeof(T);
+    return val;
+}
+
+// Read ULEB128-encoded value, bump pointer
+uintptr_t read_ULEB128(const uint8_t *& p)
+{
+    // A series of bytes, each worth 7 bits of value. The last byte has bit 8 clear.
+    
+    uintptr_t val = 0;    
+    unsigned shift = 0;
+    uint8_t bval;
+    
+    do {
+        bval = *p++;
+        val |= ((uintptr_t)(bval & 0x7F)) << shift;
+        shift += 7;
+    } while (bval & 0x80);
+    
+    return val;
+}
+
+// Read SLEB128-encoded value, bump pointer
+intptr_t read_SLEB128(const uint8_t *& p)
+{
+    // A series of bytes, each worth 7 bits of value. The last byte has bit 8 clear.
+    
+    uintptr_t val = 0;    
+    unsigned shift = 0;
+    uint8_t bval;
+    
+    do {
+        bval = *p++;
+        val |= ((uintptr_t)(bval & 0x7F)) << shift;
+        shift += 7;
+    } while (bval & 0x80);
+    
+    if (bval & 0x40) {
+        // sign bit is set, need to extend it
+        if (shift < (sizeof(uintptr_t) * 8 /* CHAR_BIT */)) {
+            val |= ((uintptr_t)-1) << shift;
+        }
+    }
+    
+    return val;
+}
+
+// Read DWARF EH value with the specified encoding, bump pointer
+uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding)
+{
+    const uint8_t *orig_p = p;
+
+    if (encoding == DW_EH_PE_omit) {
+        return 0;
+    }
+    
+    uintptr_t val;
+    
+    switch (encoding & 0x0Fu) {
+    case DW_EH_PE_uleb128:
+        val = read_ULEB128(p);
+        break;
+    case DW_EH_PE_udata2:
+        val = (uintptr_t) read_dwarf_val<uint16_t>(p);
+        break;
+    case DW_EH_PE_udata4:
+        val = (uintptr_t) read_dwarf_val<uint32_t>(p);
+        break;
+    case DW_EH_PE_udata8:
+        val = (uintptr_t) read_dwarf_val<uint64_t>(p);
+        break;
+    case DW_EH_PE_sleb128:
+        val = read_SLEB128(p);
+        break;
+    case DW_EH_PE_sdata2:
+        val = read_dwarf_val<int16_t>(p);
+        break;
+    case DW_EH_PE_sdata4:
+        val = read_dwarf_val<int32_t>(p);
+        break;
+    case DW_EH_PE_sdata8:
+        val = read_dwarf_val<int64_t>(p);
+        break;
+    default:
+        abort(); // unsupported
+    }
+    
+    switch (encoding & 0x70u) {
+    case DW_EH_PE_absptr:
+        // not relative
+        break;
+    case DW_EH_PE_pcrel:
+        // "PC" relative
+        if (val) {
+            val += (uintptr_t) orig_p;
+        }
+    default:
+        abort(); // unsupported
+    }
+
+    return val;
+}
+
+// Read DWARF EH encoded value: encoding, followed by encoded value; bump pointer
+uintptr_t read_dwarf_encoded_val(const uint8_t *& p)
+{
+    uint8_t encoding = *p++;
+    return read_dwarf_encoded_val(p, encoding);    
+}
+
+} // anon namespace
+
+// Get the fixed size for a particular encoding, if it exists, or 0
+unsigned size_from_encoding(uint8_t encoding)
+{
+    unsigned val = 0;
+    
+    switch (encoding & 0x0Fu) {
+    case DW_EH_PE_omit:
+    case DW_EH_PE_uleb128:
+    case DW_EH_PE_sleb128:
+        break;
+    case DW_EH_PE_udata2:
+    case DW_EH_PE_sdata2:
+        val = 2;
+        break;
+    case DW_EH_PE_udata4:
+    case DW_EH_PE_sdata4:
+        val = 4;
+        break;
+    case DW_EH_PE_udata8:
+    case DW_EH_PE_sdata8:
+        val = 8;
+        break;
+    default:
+        abort(); // unsupported
+    }
+    
+    return val;
+}
+
+
+void debug_write(const char16_t *msg); // XXX
+
+extern "C"
+_Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, uint64_t exception_class,
+    _Unwind_Exception *unwind_exc, _Unwind_Context *context) {
+    
+    debug_write(u"personality!\r\n"); // XXX
+    
+    uint32_t cpp;
+    char cppstr[4] = {0,'+','+','C'};
+    char *cpp_cp = (char *)&cpp;
+    for (unsigned i = 0; i < 4; i++) cpp_cp[i] = cppstr[i];
+    
+    bool native_exception = (exception_class & 0xFFFFFF00U) == cpp;
+    // ILT's blog (Jan 2011) states that "C++\1" (rather than "C++\0") is used for "dependent"
+    // exceptions, "which is used when rethrowing an exception". So we mask out the last byte.
+    // The first four bytes are for vendor, CLNG for clang/llvm, GNUC for GCC; we don't really
+    // care so just ignore them (technically we should probably check that they match what we
+    // set ourselves in _cxa_throw).
+    
+    // TODO do dependent exceptions need special handling?
+
+    if (actions & _UA_HANDLER_FRAME) {
+        // If this is the frame where we found a handler,
+        // retrieve cached items, install context
+
+        uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
+        __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
+
+        _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+        _Unwind_SetGR(context, __builtin_eh_return_data_regno(1), cxa_exception->handlerSwitchValue);
+        _Unwind_SetIP(context, (uintptr_t) cxa_exception->catchTemp);
+        return _URC_INSTALL_CONTEXT;        
+    }
+    else {
+        // Need to scan language-specific data for the frame. For C++ this is essentially a list of
+        // catch() blocks, and cleanup handlers.
+        
+        // Specifically:
+        //
+        // landing pad start = read dwarf encoded ptr; if 0, use function address
+        // read types table encoding (may be DW_EH_PE_omit, i.e. not present)
+        //   if present:
+        //     read encoded ULEB128 
+        //      - it is offset to classInfo (from current address in LSDA, i.e. end of this field)
+        // 
+        //       u8  call site encoding;
+        //  ULEB128  callsiteTableLength  (length in bytes)
+        //           (callsite table)
+        //           (action table)
+        //
+        //   call sites:
+        //      - have a start and length; are non-overlapping, ordered by start
+        //     [call site encoding] start offset (from function start)
+        //     [call site encoding] length
+        //     [call site encoding] landing pad offset (from landing pad start); 0 = none?
+        //                  ULEB128 actionEntry
+        //                            0 = cleanup
+        //                            1+ = action table offset + 1 (i.e. 1 = offset 0)
+        
+        //   action table:
+        //     Note each entry consists of (potentially) multiple actions, with an end marker
+        //     actions include: handlers, cleanup
+        //
+        //    SLEB128 (int64_t) typeIndex
+        //                      > 0:  catch; type specifies the type caught.
+        //                            value is a *negated* index which must be multiplied
+        //                            by the size of entries (according to encoding)
+        //                            eg 1 = -1 index
+        //
+        //                      < 0: "exception spec".
+        //                           This is a *negated* *byte offset* to a list of types which are
+        //                           allowed to propagate; this represents the "throws(...)" clause
+        //                           from C++98.
+        //
+        //    SLEB128 (int64_t) offset to next action (from this point)
+        //                      if 0, end of list
+        //
+        
+    
+        const uint8_t *lsda = (const uint8_t *) _Unwind_GetLanguageSpecificData(context);
+        const uintptr_t rIP = _Unwind_GetIP(context) - 1;
+        const uintptr_t func_start = _Unwind_GetRegionStart(context);
+    
+        // Landing pad start; defaults to function start
+        const uint8_t *lp_start = (const uint8_t *) read_dwarf_encoded_val(lsda);
+        if (lp_start == nullptr) {
+            lp_start = (uint8_t *) func_start;
+        }
+        
+        // Types table pointer
+        const uint8_t *types_tbl_ptr = nullptr;  // default to null
+        uint8_t types_encoding = *lsda++;
+        if (types_encoding != DW_EH_PE_omit) {
+            //  "This is an unsigned LEB128 value, and is the byte offset from this field to the
+            // start of the types table used for exception matching".
+            // It is the offset from the *end* of this field:
+            uintptr_t types_tbl_offs = read_ULEB128(lsda);
+            types_tbl_ptr = lsda + types_tbl_offs;
+        }
+        
+        uint8_t callsite_encoding = *lsda++;
+
+        uintptr_t callsite_tbl_len = read_ULEB128(lsda);
+        
+        const uint8_t *callsite_tbl = lsda;
+        
+        const uint8_t *actions_tbl = callsite_tbl + callsite_tbl_len;
+        
+        // Now we walk through the callsites until we find our current IP
+        // TODO: ILT blog says the callsite start is offset from the landing pad, base not the
+        // function start, in which case this rIP_offs calculation is wrong. However, libunwind
+        // from LLVM does this. Need to check GCC implementation.
+        // (Most of the time, landing pad base and func start are probably the same anyway).
+        uintptr_t rIP_offs = rIP - func_start;
+        
+        while (lsda < actions_tbl) {
+            uintptr_t cs_start = read_dwarf_encoded_val(lsda, callsite_encoding);
+            uintptr_t cs_len = read_dwarf_encoded_val(lsda, callsite_encoding);
+            uintptr_t cs_end = cs_start + cs_len;
+            uintptr_t lp_offs = read_dwarf_encoded_val(lsda, callsite_encoding); // landing pad
+            uintptr_t action_entry = read_ULEB128(lsda);
+                      
+            // check match
+            if (rIP_offs >= cs_start) {
+                if (rIP_offs < cs_end) {
+                    // matches location, we still need to check actions
+                    
+                    if (lp_offs == 0) {
+                        // Apparently, offset of 0 means no cleanup/catch
+                        return _URC_CONTINUE_UNWIND;
+                    }
+
+                    if (action_entry == 0) {
+                        // action_entry == 0 : cleanup only, no catches
+                        if (actions & _UA_SEARCH_PHASE) {
+                            return _URC_CONTINUE_UNWIND;
+                        }
+                        
+                        // Forced unwind, or cleanup phase
+                        // Set the registers in context so that the landing pad can resume unwind
+                        // when done:
+                        
+                        _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                        _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
+                        return _URC_INSTALL_CONTEXT;
+                    }
+                
+                    while (action_entry != 0) {
+                        // "Each entry in the action table is a pair of signed LEB128 values"
+                        
+                        const uint8_t *action_entry_ptr = actions_tbl + (action_entry - 1);
+
+                        uintptr_t type_info_index = read_ULEB128(action_entry_ptr);
+                        action_entry = read_ULEB128(action_entry_ptr);
+                        
+                        // cleanup?
+                        if (type_info_index == 0) {
+                            if (actions & _UA_SEARCH_PHASE) {
+                                return _URC_CONTINUE_UNWIND;
+                            }
+                            _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                            _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
+                            return _URC_INSTALL_CONTEXT;
+                        }
+                        
+                        // catch handler for single type?
+                        if (type_info_index > 0 && (actions & _UA_FORCE_UNWIND) == 0) {
+                            unsigned type_info_sz = size_from_encoding(types_encoding);
+                            if (type_info_sz == 0) abort();
+                            
+                            const uint8_t *catch_type_p = (types_tbl_ptr - type_info_index * type_info_sz);
+                                    
+                            std::type_info *catch_type = (std::type_info *)
+                                    read_dwarf_encoded_val(catch_type_p, types_encoding);
+                            
+                            uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
+                            __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
+                            
+                            // TODO check subtyping relationships etc, not just for an exact match
+                            if (cxa_exception->exceptionType == catch_type) {
+
+                                // Cache the values
+                                // Address of actual C++ exception:
+                                uintptr_t cxx_exception_ptr = (uintptr_t)(cxa_exception + 1);
+                                
+                                cxa_exception->adjustedPtr = (void *) cxx_exception_ptr;
+                                // TODO when we check subtyping the above may actually need to be adjusted!
+                                
+                                cxa_exception->handlerSwitchValue = type_info_index;
+                                cxa_exception->catchTemp = (void *)(lp_start + lp_offs);
+                            
+                                return _URC_HANDLER_FOUND;
+                            }
+                        }
+                        else {
+                            // throw specification
+                            // TODO
+                        }                        
+                    }
+                    
+                    // Got to end of actions without a match, continue unwind
+                    return _URC_CONTINUE_UNWIND;
+                }
+            }
+            else {
+                // we have: rIP_offs < cs_start
+                // call sites ordered by start address, therefore, we won't find one from here
+                
+                // "If the personality function finds that there is no entry for the current
+                // PC in the call-site table, then there is no exception information. This
+                // should not happen in normal operation, and in C++ will lead to a call to
+                // std::terminate"
+                
+                // TODO call terminate then?
+                return _URC_FATAL_PHASE1_ERROR;
+                
+                break;
+            }
+        }
+    } // not handler frame
+
+    return _URC_CONTINUE_UNWIND; 
+}
