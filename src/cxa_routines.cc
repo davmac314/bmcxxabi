@@ -1,10 +1,9 @@
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <new>
 
 #include "cxa_exception.h"
-
-void debug_write(const char16_t *msg); // XXX
 
 // Funky C++ stuff.
 //
@@ -30,8 +29,6 @@ void debug_write(const char16_t *msg); // XXX
 extern "C"
 void * __cxa_allocate_exception(size_t thrown_size) noexcept
 {
-    debug_write(u"__cxa_allocate_exception()\r\n");
-    
     // We need space for __cxa_exception + the exception object
     
     size_t needed = thrown_size + sizeof(__cxa_exception);

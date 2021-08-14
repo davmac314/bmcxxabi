@@ -1,7 +1,3 @@
-// From https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html
-//
-// With information from:
-// https://www.airs.com/blog/archives/date/2011/01
 
 #include <cstdint>
 #include <cstring>
@@ -11,41 +7,20 @@
 
 #include "cxa_exception.h"
 
-/*
-typedef enum
-{
-    _URC_NO_REASON, _URC_FOREIGN_EXCEPTION_CAUGHT = 1, _URC_FATAL_PHASE2_ERROR = 2,
-    _URC_FATAL_PHASE1_ERROR = 3, _URC_NORMAL_STOP = 4, _URC_END_OF_STACK = 5,
-    _URC_HANDLER_FOUND = 6, _URC_INSTALL_CONTEXT = 7, _URC_CONTINUE_UNWIND = 8
-}
-_Unwind_Reason_Code;
-
-
-typedef void (*_Unwind_Exception_Cleanup_Fn)(_Unwind_Reason_Code reason,
-            struct _Unwind_Exception *exc);
-
-struct _Unwind_Exception {
-    uint64_t   exception_class;
-    _Unwind_Exception_Cleanup_Fn exception_cleanup;
-    uint64_t  private_1;
-    uint64_t  private_2;
-};
-
-
-typedef int _Unwind_Action;
-static const _Unwind_Action _UA_SEARCH_PHASE = 1;
-static const _Unwind_Action _UA_CLEANUP_PHASE = 2;
-static const _Unwind_Action _UA_HANDLER_FRAME = 4;
-static const _Unwind_Action _UA_FORCE_UNWIND = 8;
-// static const _Unwind_Action _UA_END_OF_STACK = 16;
-
-struct _Unwind_Context;
-
-*/
+// Definition of the "personality" routine, __gxx_personality_v0, which is referenced in g++-
+// generated stack unwind information. When unwinding the stack (eg due to an exception being
+// thrown) this routine is called (from libunwind) to perform language-specific handling. See
+// comments on the method below.
+//
+// This implementation uses information from Ian Lance Taylor's blog entries:
+//
+//   https://www.airs.com/blog/archives/date/2011/01
+//
+// Additionally, the (LLVM) libcxxabi source was consulted.
 
 namespace {
 
-// DWARF encodings. These specify how a value is encoded, and what it is relative to
+// DWARF EH encodings. These specify how a value is encoded, and what it is relative to
 enum {
   DW_EH_PE_absptr = 0,  // (not relative)
   
@@ -73,7 +48,7 @@ enum {
 };
 
 template <typename T>
-T read_dwarf_val(const uint8_t *& p)
+T read_val(const uint8_t *& p)
 {
     T val;
     memcpy(&val, p, sizeof(T));
@@ -140,25 +115,25 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding)
         val = read_ULEB128(p);
         break;
     case DW_EH_PE_udata2:
-        val = (uintptr_t) read_dwarf_val<uint16_t>(p);
+        val = (uintptr_t) read_val<uint16_t>(p);
         break;
     case DW_EH_PE_udata4:
-        val = (uintptr_t) read_dwarf_val<uint32_t>(p);
+        val = (uintptr_t) read_val<uint32_t>(p);
         break;
     case DW_EH_PE_udata8:
-        val = (uintptr_t) read_dwarf_val<uint64_t>(p);
+        val = (uintptr_t) read_val<uint64_t>(p);
         break;
     case DW_EH_PE_sleb128:
         val = read_SLEB128(p);
         break;
     case DW_EH_PE_sdata2:
-        val = read_dwarf_val<int16_t>(p);
+        val = read_val<int16_t>(p);
         break;
     case DW_EH_PE_sdata4:
-        val = read_dwarf_val<int32_t>(p);
+        val = read_val<int32_t>(p);
         break;
     case DW_EH_PE_sdata8:
-        val = read_dwarf_val<int64_t>(p);
+        val = read_val<int64_t>(p);
         break;
     default:
         abort(); // unsupported
@@ -173,6 +148,7 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding)
         if (val) {
             val += (uintptr_t) orig_p;
         }
+        break;
     default:
         abort(); // unsupported
     }
@@ -218,14 +194,32 @@ unsigned size_from_encoding(uint8_t encoding)
     return val;
 }
 
-
-void debug_write(const char16_t *msg); // XXX
+// This is the "personality" routine for C++ exceptions (using the so-called "dwarf exception
+// handling"). It will be called during stack unwinding for any frame where the unwind information
+// for the frame has this routine specified as the personality (i.e. any frame in a C++ function).
+//
+// Unwinding is done in two phases, the "search" and "cleanup" phase. The search phase does not
+// actually unwind the stack; this is inefficient since a lot of the work in the two phases may
+// need to be duplicated, but has the benefit that if the exception isn't caught we can recover
+// a full stack trace of where it was thrown from.
+//
+// In the search phase, we are only interested in finding a suitable "catch" handler or identifying
+// uncaught exceptions (i.e. which enter a frame for which we have no unwind information). So we
+// return:
+//   - _URC_HANDLER_FOUND if we find a handler, this then begins the cleanup phase
+//   - _URC_CONTINUE_UNWIND if we have no catch handler, this continues search in the calling frame
+//   - _URC_FATAL_PHASE1_ERROR if we can't find any language-specific unwind info at all, this
+//             shouldn't really happen however.
+//
+// In the cleanup phase, we want to run cleanup handlers or the catch handler.
+// Note the _UA_HANDLER_FRAME bit will be set if this frame should contain the handler (i.e. if the
+// search phase returned _URC_HANDLER_FOUND on this frame). So we return:
+//   - _URC_INSTALL_CONTEXT to run a catch/cleanup or
+//   - _URC_CONTINUE_UNWIND if there is no catch/cleanup for this frame
 
 extern "C"
 _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, uint64_t exception_class,
     _Unwind_Exception *unwind_exc, _Unwind_Context *context) {
-    
-    debug_write(u"personality!\r\n"); // XXX
     
     uint32_t cpp;
     char cppstr[4] = {0,'+','+','C'};
@@ -248,8 +242,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
         __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
 
-        _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
-        _Unwind_SetGR(context, __builtin_eh_return_data_regno(1), cxa_exception->handlerSwitchValue);
+        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t) unwind_exc);
+        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(1), cxa_exception->handlerSwitchValue);
         _Unwind_SetIP(context, (uintptr_t) cxa_exception->catchTemp);
         return _URC_INSTALL_CONTEXT;        
     }
@@ -298,7 +292,6 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //                      if 0, end of list
         //
         
-    
         const uint8_t *lsda = (const uint8_t *) _Unwind_GetLanguageSpecificData(context);
         const uintptr_t rIP = _Unwind_GetIP(context) - 1;
         const uintptr_t func_start = _Unwind_GetRegionStart(context);
@@ -332,7 +325,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         // TODO: ILT blog says the callsite start is offset from the landing pad, base not the
         // function start, in which case this rIP_offs calculation is wrong. However, libunwind
         // from LLVM does this. Need to check GCC implementation.
-        // (Most of the time, landing pad base and func start are probably the same anyway).
+        // (Are landing pad base and func start ever different in practice anyway?).
         uintptr_t rIP_offs = rIP - func_start;
         
         while (lsda < actions_tbl) {
@@ -362,7 +355,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                         // Set the registers in context so that the landing pad can resume unwind
                         // when done:
                         
-                        _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
                         _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                         return _URC_INSTALL_CONTEXT;
                     }
@@ -380,7 +373,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             if (actions & _UA_SEARCH_PHASE) {
                                 return _URC_CONTINUE_UNWIND;
                             }
-                            _Unwind_SetGR(context, __builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                            _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
                             _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                             return _URC_INSTALL_CONTEXT;
                         }
@@ -433,7 +426,6 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                 // should not happen in normal operation, and in C++ will lead to a call to
                 // std::terminate"
                 
-                // TODO call terminate then?
                 return _URC_FATAL_PHASE1_ERROR;
                 
                 break;
