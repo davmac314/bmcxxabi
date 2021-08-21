@@ -25,6 +25,12 @@
 // flight. So we need to mark the exception has having been re-thrown, until it is caught again,
 // and not destroy it in the meantime.
 
+namespace {
+
+__cxa_exception *handled_exc_stack_top = nullptr;
+unsigned num_uncaught_exceptions = 0;
+
+}
 
 extern "C"
 void * __cxa_allocate_exception(size_t thrown_size) noexcept
@@ -46,13 +52,19 @@ void * __cxa_allocate_exception(size_t thrown_size) noexcept
 extern "C"
 void __cxa_free_exception(void *exc) noexcept
 {
-    // TODO call destructor?
     char *exc_p = (char *)exc - sizeof(__cxa_exception);
     free(exc_p);
 }
 
+// Cleanup exception, would not normally be called except by foreign exception handler(?)
+static void cleanup_exception(_Unwind_Reason_Code, _Unwind_Exception *)
+{
+
+}
+
 // Note we mustn't specify noexcept here: exceptions must propagate through
-extern "C" void __cxa_throw(void *thrown, std::type_info *tinfo, void (*destructor)(void *))
+extern "C"
+void __cxa_throw(void *thrown, std::type_info *tinfo, void (*destructor)(void *))
 {
     uintptr_t cxa_addr = (uintptr_t)thrown - sizeof(__cxa_exception);
     __cxa_exception *cxa_ex = (__cxa_exception *) cxa_addr;
@@ -64,18 +76,19 @@ extern "C" void __cxa_throw(void *thrown, std::type_info *tinfo, void (*destruct
     cxa_ex->exceptionType = tinfo;
     cxa_ex->exceptionDestructor = destructor;
 
-    // TODO maybe. We're supposed to set these to the current handlers.
+    // We're supposed to set these to the current handlers, but we don't support that.
     cxa_ex->unexpectedHandler = nullptr;
     cxa_ex->terminateHandler = nullptr;
     
-    // TODO
-    // increment uncaught_exceptions
+    num_uncaught_exceptions++;
     
-    cxa_ex->handlerCount = 0; // TODO undocumented by ABI, do it here?
+    cxa_ex->handlerCount = 0;
     
     char exception_class[8] = {'\0','+','+','C','X','X','M','B'}; // BMXXC++\0
     memcpy(&(cxa_ex->unwindHeader.exception_class), exception_class, sizeof(exception_class));
     
+    cxa_ex->unwindHeader.exception_cleanup = cleanup_exception;
+
     _Unwind_RaiseException(&cxa_ex->unwindHeader);
     
     abort();
@@ -89,11 +102,18 @@ void *__cxa_begin_catch(void *exception_object) noexcept
     uintptr_t cxa_addr = (uintptr_t)exception_object - sizeof(__cxa_exception);
     __cxa_exception *cxa_ex = (__cxa_exception *) cxa_addr;
 
-    // TODO if re-thrown exception, un-mark as re-thrown    
+    if (cxa_ex->handlerCount < 0) {
+        // negative handler count indicates in-flight re-thrown exception
+        cxa_ex->handlerCount = -cxa_ex->handlerCount;
+    }
+    else {
+        // otherwise, handler count should be 0
+        cxa_ex->nextException = handled_exc_stack_top;
+        handled_exc_stack_top = cxa_ex;
+    }
+
     cxa_ex->handlerCount++;
-    
-    // TODO: place on caught exception stack
-    // TODO: decrement uncaught_exceptions
+    num_uncaught_exceptions--;
     
     return cxa_ex->adjustedPtr;
 }
@@ -101,5 +121,38 @@ void *__cxa_begin_catch(void *exception_object) noexcept
 extern "C"
 void __cxa_end_catch() noexcept
 {
-    // TODO
+    // Take the exception at the top of the caught exception stack
+    __cxa_exception *st_top = handled_exc_stack_top;
+
+    // There are three cases where end catch is called:
+    // 1. a handler is completing normally
+    // 2. a handler is exiting via a new thrown exception
+    //    (or theoretically, a previous exception re-thrown via std::rethrow_exception)
+    // 3. a handler is exiting because the exception it handles was re-thrown
+    //
+    // The ABI doesn't allow distinguish the cases, but we need to differentiate case (3)
+    // because the exception must not be destroyed if it is in flight.
+
+    if (st_top->handlerCount > 0) {
+        // positive handler count, not re-thrown
+
+        if (--(st_top->handlerCount) == 0) {
+            handled_exc_stack_top = st_top->nextException;
+            if (--(st_top->referenceCount) == 0) {
+                // destroy.
+                if (st_top->exceptionDestructor) {
+                    uintptr_t native_exc_addr = (uintptr_t)(st_top) + sizeof(__cxa_exception);
+                    st_top->exceptionDestructor((void *) native_exc_addr);
+                }
+            }
+        }
+    }
+    else {
+        // negative handler count, in-flight rethrown exception
+
+        ++(st_top->handlerCount); // decrement (negative) count
+        if (st_top->handlerCount == 0) {
+            handled_exc_stack_top = st_top->nextException;
+        }
+    }
 }
