@@ -243,7 +243,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
         __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
 
-        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t) unwind_exc);
+        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
+                (uintptr_t)unwind_exc + sizeof(*unwind_exc));
         _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(1), cxa_exception->handlerSwitchValue);
         _Unwind_SetIP(context, (uintptr_t) cxa_exception->catchTemp);
         return _URC_INSTALL_CONTEXT;        
@@ -356,7 +357,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                         // Set the registers in context so that the landing pad can resume unwind
                         // when done:
                         
-                        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
+                                (uintptr_t)unwind_exc + sizeof(*unwind_exc));
                         _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                         return _URC_INSTALL_CONTEXT;
                     }
@@ -374,7 +376,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             if (actions & _UA_SEARCH_PHASE) {
                                 return _URC_CONTINUE_UNWIND;
                             }
-                            _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0), (uintptr_t)unwind_exc);
+                            _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
+                                    (uintptr_t)unwind_exc + sizeof(*unwind_exc));
                             _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                             return _URC_INSTALL_CONTEXT;
                         }
