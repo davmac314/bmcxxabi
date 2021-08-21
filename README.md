@@ -73,12 +73,11 @@ doing here).
 ## Current status
 
  * Only tested on / designed for x86-64 (in principle, should be portable)
- * Does not support re-throwing, yet
  * Currently only supports catching exceptions by using, in the catch-specification, any of:
    * the exact thrown type (or reference to it) eg `catch(B &b)` will catch `throw B{};`.
    * a base-class type [reference] which the thrown type inherits (directly or indirectly) only
      by single inheritance
  * Does not support threads, assumes single-threaded application
  * Does not include support for "foreign" (i.e. non-C++) exceptions
- * Doesn't call `std::uncaught_exception()` when it should, just uses `abort()`
+ * Doesn't call `std::uncaught_exception()`/`std::terminate()` when it should, just uses `abort()`
  * Uses various GCC built-ins, should work fine with Clang

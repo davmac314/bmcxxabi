@@ -156,3 +156,24 @@ void __cxa_end_catch() noexcept
         }
     }
 }
+
+extern "C"
+void __cxa_rethrow()
+{
+    if (handled_exc_stack_top == nullptr) {
+        abort(); // TODO should be std::terminate()
+    }
+
+    // remove the exception from the stack of uncaught exceptions
+    __cxa_exception *exc = handled_exc_stack_top;
+    handled_exc_stack_top = exc->nextException;
+
+    // Make the handlerCount negative to mark this exception as in-flight rethrown
+    exc->handlerCount = -exc->handlerCount;
+
+    num_uncaught_exceptions++;
+
+    _Unwind_RaiseException(&handled_exc_stack_top->unwindHeader);
+
+    abort();
+}
