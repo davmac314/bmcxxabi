@@ -48,7 +48,7 @@ enum {
 };
 
 template <typename T>
-T read_val(const uint8_t *& p)
+T read_val(const uint8_t *& p) noexcept
 {
     T val;
     memcpy(&val, p, sizeof(T));
@@ -57,7 +57,7 @@ T read_val(const uint8_t *& p)
 }
 
 // Read ULEB128-encoded value, bump pointer
-uintptr_t read_ULEB128(const uint8_t *& p)
+uintptr_t read_ULEB128(const uint8_t *& p) noexcept
 {
     // A series of bytes, each worth 7 bits of value. The last byte has bit 8 clear.
     
@@ -75,7 +75,7 @@ uintptr_t read_ULEB128(const uint8_t *& p)
 }
 
 // Read SLEB128-encoded value, bump pointer
-intptr_t read_SLEB128(const uint8_t *& p)
+intptr_t read_SLEB128(const uint8_t *& p) noexcept
 {
     // A series of bytes, each worth 7 bits of value. The last byte has bit 8 clear.
     
@@ -100,7 +100,7 @@ intptr_t read_SLEB128(const uint8_t *& p)
 }
 
 // Read DWARF EH value with the specified encoding, bump pointer
-uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding)
+uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding) noexcept
 {
     const uint8_t *orig_p = p;
 
@@ -157,7 +157,7 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding)
 }
 
 // Read DWARF EH encoded value: encoding, followed by encoded value; bump pointer
-uintptr_t read_dwarf_encoded_val(const uint8_t *& p)
+uintptr_t read_dwarf_encoded_val(const uint8_t *& p) noexcept
 {
     uint8_t encoding = *p++;
     return read_dwarf_encoded_val(p, encoding);    
@@ -166,7 +166,7 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p)
 } // anon namespace
 
 // Get the fixed size for a particular encoding, if it exists, or 0
-unsigned size_from_encoding(uint8_t encoding)
+unsigned size_from_encoding(uint8_t encoding) noexcept
 {
     unsigned val = 0;
     
@@ -219,7 +219,7 @@ unsigned size_from_encoding(uint8_t encoding)
 
 extern "C"
 _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, uint64_t exception_class,
-    _Unwind_Exception *unwind_exc, _Unwind_Context *context) {
+    _Unwind_Exception *unwind_exc, _Unwind_Context *context) noexcept {
     
     uint32_t cpp;
     char cppstr[4] = {0,'+','+','C'};
