@@ -1,0 +1,55 @@
+#ifndef BMCXXABI_TYPEINFO_INCLUDED
+#define BMCXXABI_TYPEINFO_INCLUDED
+
+namespace __cxxabiv1 {
+    class __class_type_info;
+}
+
+namespace std {
+
+class type_info {
+  public:
+    virtual ~type_info();
+    bool operator==(const type_info &other) const noexcept { return this == &other; }
+    bool operator!=(const type_info &other) const noexcept { return this != &other; }
+    bool before(const type_info &other) const noexcept { return __type_name < other.__type_name; }
+    const char* name() const noexcept { return __type_name; }
+
+    // We can add virtual functions for implementation of runtime support including dynamic_cast
+    // and catching exceptions. We'll (mostly) follow the lead from GCC here:
+
+    // don't need these however, (yet?)
+    // virtual bool __is_pointer_p() const { return false; }
+    // virtual bool __if_function_p() const { return false; }
+
+    // test whether a "catch" clause with *this* type can catch the specified thrown type. The object
+    // pointer (thrown_obj) may be adjusted to point to the appropriate base if return is true.
+    // "outer indicates the number of outer pointers, and whether they were const qualified".
+    // specifically, the number of outer pointers is the number of pointers already matched; bits 1+
+    // give this number and bit 0 indicates whether all pointers for *this* type have so far been
+    // const-qualified.
+    //
+    // Knowing const-qualification of outer pointers is necessary to determine whether it is valid to
+    // perform qualification conversion, eg "char **" can be converted to "const char * const *" but
+    // not to "const char **". Or in english:
+    //     ptr to ptr to char can be converted to ptr to const ptr to const char
+    //   but
+    //     cannot be coverted to ptr to ptr to const char
+    // The specific rule is that if constness differs at any point, every pointer up to that point
+    // must also be a pointer to const. (C++17 7.5 Qualification Conversions). (If volatility differs
+    // at any point the same is true, every pointer up to that point must be const).
+    virtual bool __do_catch(const type_info *__thrown_type, void **__thrown_obj, unsigned __outer) const noexcept;
+
+    virtual bool __do_upcast(const __cxxabiv1::__class_type_info *__target_type, void **__obj_ptr) const noexcept;
+
+  protected:
+    const char *__type_name;
+
+  private:
+    type_info (const type_info& rhs) = delete;
+    type_info& operator= (const type_info& rhs) = delete;
+};
+
+} // namespace std
+
+#endif /* BMCXXABI_TYPEINFO_INCLUDED */

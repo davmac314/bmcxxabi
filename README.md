@@ -16,6 +16,10 @@ Specifically, BMCXXABI contains implementations of:
  * the `__cxa_*` routines to deal with exception handling (as documented by the ABI)
  * the `__gxx_personality_v0` C++ "personality" routine of GCC (mostly undocumented)
  * the `std::type_info` class and its ABI-private derived types (as documented by the ABI)
+ 
+It does not currently include:
+ * support for function static variable initialisers/destructors
+ * support for dynamic_cast
 
 This software is absolutely free and you may use it as you wish, without restriction.
 
@@ -69,8 +73,10 @@ doing here).
  * Only tested on / designed for x86-64 (in principle, should be portable)
  * Does not properly handle exception cleanup yet
  * Does not support re-throwing, or nested exceptions, yet
- * Currently only supports catching exceptions by the exact correct type (i.e. `catch (Base &)` won't
-   catch a thrown `Derived` exception).
+ * Currently only supports catching exceptions by using, in the catch-specification, any of:
+   * the exact thrown type (or reference to it) eg `catch(B &b)` will catch `throw B{};`.
+   * a base-class type [reference] which the thrown type inherits (directly or indirectly) only
+     by single inheritance
  * Does not support threads, assumes single-threaded application
  * Does not include support for "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang

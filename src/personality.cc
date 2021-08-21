@@ -6,6 +6,7 @@
 #include <unwind.h>
 
 #include "cxa_exception.h"
+#include "../include/typeinfo"
 
 // Definition of the "personality" routine, __gxx_personality_v0, which is referenced in g++-
 // generated stack unwind information. When unwinding the stack (eg due to an exception being
@@ -391,15 +392,13 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
                             __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
                             
-                            // TODO check subtyping relationships etc, not just for an exact match
-                            if (cxa_exception->exceptionType == catch_type) {
+                            void * cxx_exception_ptr = (void *)(cxa_exception + 1);
+                            if (catch_type->__do_catch(cxa_exception->exceptionType, &cxx_exception_ptr, 1)) {
 
                                 // Cache the values
+
                                 // Address of actual C++ exception:
-                                uintptr_t cxx_exception_ptr = (uintptr_t)(cxa_exception + 1);
-                                
-                                cxa_exception->adjustedPtr = (void *) cxx_exception_ptr;
-                                // TODO when we check subtyping the above may actually need to be adjusted!
+                                cxa_exception->adjustedPtr = cxx_exception_ptr;
                                 
                                 cxa_exception->handlerSwitchValue = type_info_index;
                                 cxa_exception->catchTemp = (void *)(lp_start + lp_offs);

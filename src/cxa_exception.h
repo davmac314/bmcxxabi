@@ -1,4 +1,4 @@
-#ifndef _CXA_EXCEPTION_H_INCLUDEd
+#ifndef _CXA_EXCEPTION_H_INCLUDED
 #define _CXA_EXCEPTION_H_INCLUDED 1
 
 #include <exception>
