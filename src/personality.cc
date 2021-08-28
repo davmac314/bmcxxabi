@@ -164,8 +164,6 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p) noexcept
     return read_dwarf_encoded_val(p, encoding);    
 }
 
-} // anon namespace
-
 // Get the fixed size for a particular encoding, if it exists, or 0
 unsigned size_from_encoding(uint8_t encoding) noexcept
 {
@@ -194,6 +192,9 @@ unsigned size_from_encoding(uint8_t encoding) noexcept
     
     return val;
 }
+
+} // anon namespace
+
 
 // This is the "personality" routine for C++ exceptions (using the so-called "dwarf exception
 // handling"). It will be called during stack unwinding for any frame where the unwind information
@@ -428,6 +429,9 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                 // should not happen in normal operation, and in C++ will lead to a call to
                 // std::terminate"
                 
+                // We return an error here, that way _Unwind_RaiseException returns (instead of
+                // unwinding) and std::terminate() can be called from _cxa_throw(...).
+
                 return _URC_FATAL_PHASE1_ERROR;
                 
                 break;
