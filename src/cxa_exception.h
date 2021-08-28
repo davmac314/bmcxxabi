@@ -31,4 +31,6 @@ struct __cxa_exception {
     _Unwind_Exception unwindHeader;
 };
 
+extern "C" void *__cxa_begin_catch(void *exception_object) noexcept;
+
 #endif

@@ -50,6 +50,7 @@ In reality, this library is only one piece of the puzzle. You also need:
    dynamic allocation when an exception is thrown.
  * An implementation of `new` and `delete` operators, which should be trivial when you have
    malloc/free anyway.
+ * An implementation of std::terminate
 
 ## Background documentation
 
@@ -79,5 +80,4 @@ doing here).
      by single inheritance
  * Does not support threads, assumes single-threaded application
  * Does not include support for "foreign" (i.e. non-C++) exceptions
- * Doesn't call `std::uncaught_exception()`/`std::terminate()` when it should, just uses `abort()`
  * Uses various GCC built-ins, should work fine with Clang

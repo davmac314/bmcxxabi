@@ -36,16 +36,15 @@ extern "C"
 void * __cxa_allocate_exception(size_t thrown_size) noexcept
 {
     // We need space for __cxa_exception + the exception object
-    
     size_t needed = thrown_size + sizeof(__cxa_exception);
     
-    // C++17 has aligned new, but let's not require that yet; we'll just use malloc.
     char *buf = (char *) malloc(needed);
     
-    if (buf != nullptr) {
-        // Need to do anything?
+    if (buf == nullptr) {
+        std::terminate();
     }
-    
+
+    memset(buf, 0, sizeof(__cxa_exception));
     return buf + sizeof(__cxa_exception);
 }
 
@@ -91,7 +90,8 @@ void __cxa_throw(void *thrown, std::type_info *tinfo, void (*destructor)(void *)
 
     _Unwind_RaiseException(&cxa_ex->unwindHeader);
     
-    abort();
+    __cxa_begin_catch(thrown);
+    std::terminate();
 }
 
 extern "C"
@@ -161,7 +161,7 @@ extern "C"
 void __cxa_rethrow()
 {
     if (handled_exc_stack_top == nullptr) {
-        abort(); // TODO should be std::terminate()
+        std::terminate();
     }
 
     // remove the exception from the stack of uncaught exceptions
@@ -175,5 +175,7 @@ void __cxa_rethrow()
 
     _Unwind_RaiseException(&handled_exc_stack_top->unwindHeader);
 
-    abort();
+    void *cxx_exception = (void *)((uintptr_t)exc + sizeof(__cxa_exception));
+    __cxa_begin_catch(cxx_exception);
+    std::terminate();
 }
