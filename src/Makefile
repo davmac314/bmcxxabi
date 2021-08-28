@@ -11,7 +11,7 @@ all: $(OBJS)
 	ar -r $(OUTDIR)/libcxxabi.a $(OBJS)
 
 $(OBJS): %.o: %.cc
-	$(CXX) $(CCPPFLAGS) $(CCFLAGS) -c $< -o $@
+	$(CXX) $(CXXPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 clean:
 	rm -f $(OBJS)

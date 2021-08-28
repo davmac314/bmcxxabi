@@ -3,12 +3,12 @@
 # OUTDIR
 #   Where the resulting library, libcxxabi.a, should be placed
 #
-# CCPPFLAGS
+# CXXPPFLAGS
 #   Preprocessor options; should generally include "-nostdinc++" and include path(s) for (suitable)
 #   C++ standard library (and unwind library, though GCC provides unwind.h so this should not really
 #   be required).
 #
-# CCFLAGS
+# CXXFLAGS
 #   C++ compilation options. Should include necessary architectural options. For x86-64, probably
 #   should include "-march=x86-64 -mno-sse -mno-red-zone". Should disable any features which may
 #   require additional runtime support.
@@ -22,7 +22,7 @@
 
 CXX=g++
 
-export OUTDIR CXX CCFLAGS CCPPFLAGS
+export OUTDIR CXX CXXFLAGS CXXPPFLAGS
 
 all:
 	$(MAKE) -C src all
