@@ -44,13 +44,18 @@ This software is absolutely free and you may use it as you wish, without restric
 ## Requirements
 
 In reality, this library is only one piece of the puzzle. You also need:
- * A "libunwind" implementation. There are several to choose from.
+ * A "libunwind" implementation. Checkout out bmunwind.
  * Some C++ headers and functions. BMCXXABI source needs headers such as `cstring` and `cstdlib`.
+   You can use libbmcxx.
  * Importantly, an implementation of `malloc` and `free`. The Itanium C++ exception model requires
    dynamic allocation when an exception is thrown.
  * An implementation of `new` and `delete` operators, which should be trivial when you have
-   malloc/free anyway.
- * An implementation of std::terminate
+   malloc/free anyway, and which are provided by libbmcxx.
+ * An implementation of `std::terminate` (also provided by libbmcxx).
+ 
+This project, "bmunwind", and "libbmcxx" form a trio which together provide support for C++ in
+"bare metal" environments. In theory, you can swap out any of these components with suitable
+replacements.
 
 ## Background documentation
 
