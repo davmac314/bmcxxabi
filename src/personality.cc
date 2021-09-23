@@ -154,6 +154,10 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding) noexcept
         abort(); // unsupported
     }
 
+    if (encoding & DW_EH_PE_indirect) {
+        val = *(uintptr_t *)val;
+    }
+
     return val;
 }
 
