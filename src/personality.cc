@@ -218,11 +218,18 @@ unsigned size_from_encoding(uint8_t encoding) noexcept
 //             shouldn't really happen however.
 //
 // In the cleanup phase, we want to run cleanup handlers or the catch handler.
-// Note the _UA_HANDLER_FRAME bit will be set if this frame should contain the handler (i.e. if the
-// search phase returned _URC_HANDLER_FOUND on this frame). So we return:
+// So we return:
 //   - _URC_INSTALL_CONTEXT to run a catch/cleanup or
 //   - _URC_CONTINUE_UNWIND if there is no catch/cleanup for this frame
-
+// The _UA_HANDLER_FRAME bit will be set if this frame should contain the handler (i.e. if the
+// search phase returned _URC_HANDLER_FOUND on this frame), in that case we will definitely return
+// _URC_INSTALL_CONTEXT.
+//
+// Note that there can only be one handler per address [range] and it needs to handle both catches
+// and cleanup. The "handler switch" register (__builtin_eh_return_data_regno(1)) is 0 for a cleanup
+// and in this case the "exception ptr" register (..._regno(0)) is a pointer to the _Unwind_Exception.
+// However for a catch (..._regno(1) is non-zero) then regno(0) is a pointer to the actual thrown
+// object.
 extern "C"
 _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, uint64_t exception_class,
     _Unwind_Exception *unwind_exc, _Unwind_Context *context) noexcept {
@@ -248,6 +255,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
         __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
 
+        // for a catch, as opposed to a cleanup operation, EHregister#0 is set to the address of
+        // the thrown object (for a cleanup it points to the _Unwind_Exception).
         _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
                 (uintptr_t)unwind_exc + sizeof(*unwind_exc));
         _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(1), cxa_exception->handlerSwitchValue);
@@ -329,12 +338,14 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         const uint8_t *actions_tbl = callsite_tbl + callsite_tbl_len;
         
         // Now we walk through the callsites until we find our current IP
-        // TODO: ILT blog says the callsite start is offset from the landing pad, base not the
-        // function start, in which case this rIP_offs calculation is wrong. However, libunwind
-        // from LLVM does this. Need to check GCC implementation.
-        // (Are landing pad base and func start ever different in practice anyway?).
+        // ILT blog says the callsite start is offset from the landing pad base not the
+        // function start, in which case this rIP_offs calculation is wrong. However,
+        // 1) libunwind from LLVM does the following;
+        // 2) as does libsupc++ from GCC;
+        // 3) basing callsites off landing pad base makes little sense;
+        // 4) (Are landing pad base and func start ever different in practice anyway?).
         uintptr_t rIP_offs = rIP - func_start;
-        
+
         while (lsda < actions_tbl) {
             uintptr_t cs_start = read_dwarf_encoded_val(lsda, callsite_encoding);
             uintptr_t cs_len = read_dwarf_encoded_val(lsda, callsite_encoding);
@@ -363,7 +374,9 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                         // when done:
                         
                         _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
-                                (uintptr_t)unwind_exc + sizeof(*unwind_exc));
+                                (uintptr_t)unwind_exc);
+                        _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(1),
+                                (uintptr_t)0);
                         _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                         return _URC_INSTALL_CONTEXT;
                     }
@@ -382,7 +395,9 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                                 return _URC_CONTINUE_UNWIND;
                             }
                             _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(0),
-                                    (uintptr_t)unwind_exc + sizeof(*unwind_exc));
+                                    (uintptr_t)unwind_exc);
+                            _Unwind_SetGR(context, (int)__builtin_eh_return_data_regno(1),
+                                    (uintptr_t)0);
                             _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                             return _URC_INSTALL_CONTEXT;
                         }
