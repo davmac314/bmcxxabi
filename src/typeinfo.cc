@@ -22,6 +22,11 @@ bool type_info::__do_upcast(const __cxxabiv1::__class_type_info *target_type, vo
     return false;
 }
 
+const __cxxabiv1::__pointer_type_info *type_info::__as_pointer_type() const noexcept
+{
+    return nullptr;
+}
+
 } // namespace std
 
 namespace __cxxabiv1 {
@@ -67,6 +72,10 @@ bool __class_type_info::__do_catch(const std::type_info *thrown_type, void **thr
         return true;
     }
 
+    // bit 0: all outer pointers have been const
+    // bit 1+: number of outer pointers
+    // >=4 implies more than one level of pointer.
+    // One level is ok because "catch(Base *b)" can catch a thrown "Derived *"
     if (outer >= 4) {
         return false;
     }
@@ -97,7 +106,8 @@ bool __si_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *targ
     return __base_type->__do_upcast(__base_type, obj_ptr);
 }
 
-// __pbase_type_info : type_info base class for pointer types
+// __pbase_type_info : type_info base class for pointer types (regular pointers, and
+// pointers-to-members)
 
 class __pbase_type_info : public std::type_info
 {
@@ -120,8 +130,50 @@ class __pointer_type_info : public __pbase_type_info
 {
 public:
     ~__pointer_type_info();
+    virtual bool __do_catch(const std::type_info *thrown_type, void **thrown_obj,
+            unsigned outer) const noexcept override;
+
+    virtual const __pointer_type_info *__as_pointer_type() const noexcept override;
 };
 
 __pointer_type_info::~__pointer_type_info() { }
+
+bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **thrown_obj,
+        unsigned outer) const noexcept
+{
+    if (*thrown_type == *this) {
+        return true;
+    }
+
+    // A qualified pointer can catch a non-qualified pointer (to suitable type) but every outer
+    // pointer must be const qualified (true iff outer&1 == 1).
+
+    // first we need to check if the thrown type *is* a pointer type:
+    const __pointer_type_info *thrown_ptr_type = thrown_type->__as_pointer_type();
+    if (thrown_ptr_type == nullptr) {
+        return false;
+    }
+
+    if (thrown_ptr_type->__flags != __flags) {
+        // If other type has any qualifiers we don't, no match:
+        if ((thrown_ptr_type->__flags & ~__flags) != 0) {
+            return false;
+        }
+
+        // If it hasn't been const so far, no match:
+        if ((outer & 1) == 0) {
+            return false;
+        }
+    }
+
+    unsigned newOuter = outer + 2; // (bits 1+ keep count, so this is adding one)
+    newOuter &= ~(~__flags && __const_mask);
+    return __pointee->__do_catch(thrown_ptr_type->__pointee, thrown_obj, newOuter);
+}
+
+const __pointer_type_info *__pointer_type_info::__as_pointer_type() const noexcept
+{
+    return this;
+}
 
 } // namespace __cxxabiv1

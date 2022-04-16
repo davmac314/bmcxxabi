@@ -11,7 +11,7 @@
 // Definition of the "personality" routine, __gxx_personality_v0, which is referenced in g++-
 // generated stack unwind information. When unwinding the stack (eg due to an exception being
 // thrown) this routine is called (from libunwind) to perform language-specific handling. See
-// comments on the method below.
+// comments on the function itself below for more details.
 //
 // This implementation uses information from Ian Lance Taylor's blog entries:
 //
@@ -416,6 +416,11 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
                             
                             void * cxx_exception_ptr = (void *)(cxa_exception + 1);
+                            if (catch_type->__as_pointer_type() != nullptr) {
+                                // If catch-type is a pointer, handler expects the actual pointer value:
+                                cxx_exception_ptr = *(void **)cxx_exception_ptr;
+                            }
+
                             if (catch_type->__do_catch(cxa_exception->exceptionType, &cxx_exception_ptr, 1)) {
 
                                 // Cache the values

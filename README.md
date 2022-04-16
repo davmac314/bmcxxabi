@@ -1,13 +1,14 @@
 # BMCXXABI: Bare Metal C++ ABI
 
-by D. Mcall - <davmac@davmac.org>
+by Davin McCall - <davmac@davmac.org>
 
 **Work-in-progress! Only for x86-64 at the moment! Not complete!**
-See "current status" below.
+_May be usable and useful in some scenarios; see "current status" below)._
 
 This is an implementation of the support routines specified in the Itanium C++ ABI, designed for
 use in "bare metal" applications - such as kernel code, or UEFI applications - when using GCC or
-a compatible compiler with "dwarf exception handling" (eg GCC on Linux).
+a compatible compiler with "dwarf exception handling" (eg GCC on Linux). Using BMCXXABI you can
+write code which throws and catches exceptions in such an application.
 
 Note that the "Itanium" C++ ABI is also used (at least as baseline) for other processor
 architectures.
@@ -78,11 +79,15 @@ doing here).
 
 ## Current status
 
- * Only tested on / designed for x86-64 (in principle, should be portable)
+ * Only tested on / designed for x86-64 (in principle, should be somewhat portable)
  * Currently only supports catching exceptions by using, in the catch-specification, any of:
    * the exact thrown type (or reference to it) eg `catch(B &b)` will catch `throw B{};`.
    * a base-class type [reference] which the thrown type inherits (directly or indirectly) only
-     by single inheritance
+     by single inheritance (not yet via multiple inheritance)
+   * a pointer which is compatible with a thrown pointer by the usual rules, including when the
+     thrown pointer is to a derived type and the catch-clause pointer is to a base type and the
+     inheritance chain is via single inheritance only - but not when the inheritance chain is via
+     multiple inheritance
  * Does not support threads, assumes single-threaded application
  * Does not include support for "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang
