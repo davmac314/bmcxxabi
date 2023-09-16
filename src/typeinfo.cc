@@ -167,7 +167,7 @@ bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **t
     }
 
     unsigned newOuter = outer + 2; // (bits 1+ keep count, so this is adding one)
-    newOuter &= ~(~__flags && __const_mask);
+    newOuter &= ~(~__flags & __const_mask);
     return __pointee->__do_catch(thrown_ptr_type->__pointee, thrown_obj, newOuter);
 }
 
