@@ -62,7 +62,8 @@ replacements.
 
 For details about the Itanium C++ ABI and the functions provided by BMCXXABI, see:
  * https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html
- * https://refspecs.linuxfoundation.org/cxxabi-1.86.html 
+ * https://refspecs.linuxfoundation.org/cxxabi-1.86.html
+ * https://gitlab.com/x86-psABIs/x86-64-ABI/
 
 Also included as an implementation of `__gxx_personality_v0`, the exception-handling "personality"
 routine as implemented by GCC (and LLVM's clang++) when configured for so-called "DWARF exception handling"
