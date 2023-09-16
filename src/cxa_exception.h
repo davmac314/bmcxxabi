@@ -1,9 +1,9 @@
 #ifndef _CXA_EXCEPTION_H_INCLUDED
 #define _CXA_EXCEPTION_H_INCLUDED 1
 
-#include <exception>
-
 #include <unwind.h>
+
+#include "../include/typeinfo"
 
 struct __cxa_exception { 
 
@@ -14,8 +14,15 @@ struct __cxa_exception {
     
     std::type_info *exceptionType;
     void (*exceptionDestructor)(void *);
-    std::unexpected_handler unexpectedHandler;
-    std::terminate_handler terminateHandler;
+
+    typedef void (*terminate_handler) ();
+
+    // Any replacement "unexpected" handler must be of this type.
+    typedef void (*unexpected_handler) ();
+
+    unexpected_handler unexpectedHandler;
+    terminate_handler terminateHandler;
+
     __cxa_exception *nextException;
 
     int handlerCount;
