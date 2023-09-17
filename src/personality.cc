@@ -286,7 +286,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //  [table]   (callsite table)
         //  [table]   (action table)
         //
-        //   call sites (callsite table):
+        //   Call sites (callsite table):
         //      - have a start and length; are non-overlapping, ordered by start
         //     [call site encoding] start offset (from function start)
         //     [call site encoding] length
@@ -295,9 +295,9 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //                            0 = cleanup
         //                            1+ = action table offset + 1 (i.e. 1 = offset 0)
         //
-        //   action table:
-        //     Note each entry consists of (potentially) multiple actions, with an end marker
-        //     actions include: handlers, cleanup.
+        //   Action table:
+        //     Note each entry consists of (potentially) multiple actions, with an end marker.
+        //     Actions include: handlers, cleanup, check vs throw(...) specification.
         //
         //     "Each entry in the action table is a pair of signed LEB128 values":
         //
@@ -317,8 +317,10 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //                           negated index into the classInfo table (eg 1 = -1 index from
         //                           classInfo table pointer); value of 0 terminates the list.
         //
-        //    SLEB128 (int64_t) offset to next action (from this point)
-        //                      if 0, end of list
+        //    SLEB128 (int64_t) offset (from the location of this value) to next action. Note that
+        //                      offset is not from location after the value - it is from the
+        //                      actual location where the encoded value begins.
+        //                      If 0, end of action list.
         //
         
         //   classInfo table:
@@ -400,14 +402,14 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                         _Unwind_SetIP(context, (uintptr_t)(lp_start + lp_offs));
                         return _URC_INSTALL_CONTEXT;
                     }
-                
-                    while (action_entry != 0) {
-                        // "Each entry in the action table is a pair of signed LEB128 values"
-                        
-                        const uint8_t *action_entry_ptr = actions_tbl + (action_entry - 1);
 
-                        uintptr_t type_info_index = read_ULEB128(action_entry_ptr);
-                        action_entry = read_ULEB128(action_entry_ptr);
+                    const uint8_t *action_entry_ptr = actions_tbl + (action_entry - 1);
+
+                    while (action_entry != 0) {
+                        // "Each entry in the action table is a pair of signed LEB128 values"...
+                        // read the first one now, act on it, and read the 2nd (offset to next
+                        // entry) afterwards.
+                        intptr_t type_info_index = read_SLEB128(action_entry_ptr);
                         
                         // cleanup?
                         if (type_info_index == 0) {
@@ -487,7 +489,15 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
 
                                 ts_index = read_ULEB128(throw_spec_start);
                             }
-                        }                        
+                        }
+
+                        // The next value we read is an offset from the current position in the
+                        // action entry table, so we need to avoid modifying the current position
+                        // before adding the offset; copy the value and use the copy in read_SLEB:
+                        const uint8_t *action_entry_read_next = action_entry_ptr;
+                        intptr_t action_entry_offs = read_SLEB128(action_entry_read_next);
+                        if (action_entry_offs == 0) break;
+                        action_entry_ptr += action_entry_offs;
                     }
                     
                     // Got to end of actions without a match, continue unwind
