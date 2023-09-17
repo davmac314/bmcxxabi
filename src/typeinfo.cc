@@ -254,6 +254,8 @@ bool __vmi_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *tar
 {
     void *found_subobj = nullptr;
     for (unsigned i = 0; i < __base_count; ++i) {
+        if (!(__base_info[i].__offset_flags & __base_class_type_info::__public_mask))
+            continue;
         void *base_subobj = get_base_subobj(&__base_info[i], *obj_ptr);
         if (*__base_info[i].__base_type == *target_type) {
             if (found_subobj == nullptr) {
@@ -285,6 +287,8 @@ bool __vmi_class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info 
             void *current_subobj, void **found_subobj) const noexcept
 {
     for (unsigned i = 0; i < __base_count; ++i) {
+        if (!(__base_info[i].__offset_flags & __base_class_type_info::__public_mask))
+            continue;
         void *base_subobj = get_base_subobj(&__base_info[i], current_subobj);
         if (*__base_info[i].__base_type == *target_type) {
             if (*found_subobj == nullptr) {
