@@ -242,9 +242,10 @@ static void *get_base_subobj(const __base_class_type_info *base_info, void *this
         return (char *)this_obj + offset;
     }
     else {
-        // virtual base
-        // TODO
-        return nullptr;
+        // virtual base; offset is a vtable offset to an entry with actual offset
+        char *vtable_ptr = *(char **)this_obj;
+        int subobj_offs = *(int *)(vtable_ptr + offset);
+        return (char *)this_obj + subobj_offs;
     }
 }
 
