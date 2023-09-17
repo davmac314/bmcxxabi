@@ -442,21 +442,20 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                                     read_dwarf_encoded_val(catch_type_p, types_encoding);
 
                             void * cxx_exception_ptr = (void *)(cxa_exception + 1);
-                            if (catch_type->__as_pointer_type() != nullptr) {
+                            if (cxa_exception->exceptionType->__as_pointer_type() != nullptr) {
                                 // If catch-type is a pointer, handler expects the actual pointer value:
                                 cxx_exception_ptr = *(void **)cxx_exception_ptr;
                             }
 
-                            if (catch_type->__do_catch(cxa_exception->exceptionType, &cxx_exception_ptr, 1)) {
-
-                                // Cache the values
-
-                                // Address of actual C++ exception:
+                            // A null catch_type is a catch-any aka "catch(...)". Otherwise we
+                            // need to check the type.
+                            if (catch_type == nullptr
+                                    || catch_type->__do_catch(cxa_exception->exceptionType,
+                                            &cxx_exception_ptr, 1)) {
+                                // Cache the values that will be used in phase 2:
                                 cxa_exception->adjustedPtr = cxx_exception_ptr;
-                                
                                 cxa_exception->handlerSwitchValue = type_info_index;
                                 cxa_exception->catchTemp = (void *)(lp_start + lp_offs);
-                            
                                 return _URC_HANDLER_FOUND;
                             }
                         }
@@ -472,7 +471,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                                         read_dwarf_encoded_val(catch_type_p, types_encoding);
 
                                 void * cxx_exception_ptr = (void *)(cxa_exception + 1);
-                                if (catch_type->__as_pointer_type() != nullptr) {
+                                if (cxa_exception->exceptionType->__as_pointer_type() != nullptr) {
                                     // If catch-type is a pointer, handler expects the actual pointer value:
                                     cxx_exception_ptr = *(void **)cxx_exception_ptr;
                                 }
