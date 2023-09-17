@@ -45,7 +45,7 @@ class type_info {
 
     virtual bool __do_upcast(const __cxxabiv1::__class_type_info *__target_type, void **__obj_ptr) const noexcept;
 
-    // No longer following GCC's lead:
+    // Not following GCC's lead after this point:
 
     // Downcast to __pointer_type_info (or return nullptr):
     virtual const __cxxabiv1::__pointer_type_info *__as_pointer_type() const noexcept;

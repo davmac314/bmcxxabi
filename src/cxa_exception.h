@@ -20,8 +20,8 @@ struct __cxa_exception {
     // Any replacement "unexpected" handler must be of this type.
     typedef void (*unexpected_handler) ();
 
-    unexpected_handler unexpectedHandler;
-    terminate_handler terminateHandler;
+    /* std:: */ unexpected_handler unexpectedHandler;
+    /* std:: */ terminate_handler terminateHandler;
 
     __cxa_exception *nextException;
 

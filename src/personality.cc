@@ -285,7 +285,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //  ULEB128   callsiteTableLength  (length in bytes)
         //  [table]   (callsite table)
         //  [table]   (action table)
-        //
+
         //   Call sites (callsite table):
         //      - have a start and length; are non-overlapping, ordered by start
         //     [call site encoding] start offset (from function start)
@@ -294,7 +294,7 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //                  ULEB128 actionEntry
         //                            0 = cleanup
         //                            1+ = action table offset + 1 (i.e. 1 = offset 0)
-        //
+
         //   Action table:
         //     Note each entry consists of (potentially) multiple actions, with an end marker.
         //     Actions include: handlers, cleanup, check vs throw(...) specification.
