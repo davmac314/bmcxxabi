@@ -65,7 +65,7 @@ For details about the Itanium C++ ABI and the functions provided by BMCXXABI, se
  * https://refspecs.linuxfoundation.org/cxxabi-1.86.html
  * https://gitlab.com/x86-psABIs/x86-64-ABI/
 
-Also included as an implementation of `__gxx_personality_v0`, the exception-handling "personality"
+Also included is an implementation of `__gxx_personality_v0`, the exception-handling "personality"
 routine as implemented by GCC (and LLVM's clang++) when configured for so-called "DWARF exception handling"
 (which isn't actually part of the DWARF specification at all). This is the standard exception handling
 mechanism used on Linux, for instance.
@@ -80,15 +80,8 @@ doing here).
 
 ## Current status
 
- * Only tested on / designed for x86-64 (in principle, should be somewhat portable)
- * Currently only supports catching exceptions by using, in the catch-specification, any of:
-   * the exact thrown type (or reference to it) eg `catch(B &b)` will catch `throw B{};`.
-   * a base-class type [reference] which the thrown type inherits (directly or indirectly) only
-     by single inheritance (not yet via multiple inheritance)
-   * a pointer which is compatible with a thrown pointer by the usual rules, including when the
-     thrown pointer is to a derived type and the catch-clause pointer is to a base type and the
-     inheritance chain is via single inheritance only - but not when the inheritance chain is via
-     multiple inheritance
+ * Only tested on / designed for x86-64 (in principle, various parts should be somewhat portable)
+ * throwing/catching some obscure types might cause link errors (incomplete RTTI)
  * Does not support threads, assumes single-threaded application
  * Does not include support for "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang
