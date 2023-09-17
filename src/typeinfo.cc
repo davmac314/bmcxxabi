@@ -147,6 +147,12 @@ public:
     };
 };
 
+// A pointer to typeid(nullptr_t), lazily initialised
+static const std::type_info *nullptr_ti = nullptr;
+
+// An (external) function to retrieve type_info for nullptr_t
+const std::type_info *get_npti();
+
 class __pointer_type_info : public __pbase_type_info
 {
 public:
@@ -163,6 +169,20 @@ bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **t
         unsigned outer) const noexcept
 {
     if (*thrown_type == *this) {
+        return true;
+    }
+
+    // Check for nullptr_t.
+    // Although "*thrown_type == typeid(decltype(nullptr))" would be nice, we can't use typeid if
+    // this file is compiled with -fno-rtti. Rather than force compilation of the whole file with
+    // -frtti, use a function in an external compilation unit (which will be compiled with -frtti)
+    // to retrieve the typeinfo.
+
+    if (nullptr_ti == nullptr) {
+        nullptr_ti = get_npti();
+    }
+
+    if (*thrown_type == *nullptr_ti) {
         return true;
     }
 
