@@ -61,6 +61,14 @@ public:
     virtual ~__class_type_info();
     virtual bool __do_catch(const std::type_info *__thrown_type, void **__thrown_obj,
             unsigned __outer) const noexcept override;
+
+    // current_subobj: the current subobject (within original thrown object) corresponding to a
+    // base of this class type
+    // *found_subobj: nullptr if not found; otherwise, a candidate subobject
+    // return: false if ambiguity was discovered; true otherwise (*found_subobj is single found
+    //         subobject, or null)
+    virtual bool __do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
+            void *current_subobj, void **found_subobj) const noexcept;
 };
 
 __class_type_info::~__class_type_info() {}
@@ -83,6 +91,19 @@ bool __class_type_info::__do_catch(const std::type_info *thrown_type, void **thr
     return thrown_type->__do_upcast(this, thrown_obj);
 }
 
+bool __class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
+            void *current_subobj, void **found_subobj) const noexcept
+{
+    if (__do_upcast(target_type, &current_subobj)) {
+        if (*found_subobj != nullptr) {
+            return *found_subobj == current_subobj;
+        }
+        *found_subobj = current_subobj;
+    }
+
+    return true;
+}
+
 // __si_class_type_info : type_info for class with single inheritance
 
 class __si_class_type_info : public __class_type_info
@@ -103,7 +124,7 @@ bool __si_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *targ
         return true;
     }
 
-    return __base_type->__do_upcast(__base_type, obj_ptr);
+    return __base_type->__do_upcast(target_type, obj_ptr);
 }
 
 // __pbase_type_info : type_info base class for pointer types (regular pointers, and
@@ -174,6 +195,115 @@ bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **t
 const __pointer_type_info *__pointer_type_info::__as_pointer_type() const noexcept
 {
     return this;
+}
+
+// base class info for __vmi_class_type_info
+
+struct __base_class_type_info
+{
+    const __class_type_info *__base_type;
+
+    // offset, and virtual/public flags. The offset is either the (positive) offset of the base
+    // subobject (non-virtual base) or, for virtual bases, the (negative) offset in the virtual
+    // table of the entry holding the offset (positive or negative) of the base subobject.
+    long __offset_flags;
+
+    // bit masks for values in __offset_flags:
+    static const long __virtual_mask = 0x1;
+    static const long __public_mask = 0x2;
+
+    // shift needed to get base class offset from __offset_flags
+    static const int __offset_shift = 8;
+};
+
+
+// __vmi_class_type_info: class using virtual or multiple inheritance
+
+class __vmi_class_type_info : public __class_type_info {
+public:
+    unsigned int __flags;
+    unsigned int __base_count;
+    __base_class_type_info __base_info[];
+
+    static const unsigned non_diamond_repeat_mask = 0x1;
+    static const unsigned __diamond_shaped_mask = 0x2;
+
+    virtual bool __do_upcast(const __cxxabiv1::__class_type_info *__target_type, void **__obj_ptr)
+            const noexcept override;
+    virtual bool __do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
+            void *current_subobj, void **found_subobj) const noexcept override;
+};
+
+static void *get_base_subobj(const __base_class_type_info *base_info, void *this_obj)
+{
+    long offset = base_info->__offset_flags >> __base_class_type_info::__offset_shift;
+    if (!(base_info->__offset_flags & __base_class_type_info::__virtual_mask)) {
+        // non-virtual base
+        return (char *)this_obj + offset;
+    }
+    else {
+        // virtual base
+        // TODO
+        return nullptr;
+    }
+}
+
+bool __vmi_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *target_type,
+        void **obj_ptr) const noexcept
+{
+    void *found_subobj = nullptr;
+    for (unsigned i = 0; i < __base_count; ++i) {
+        void *base_subobj = get_base_subobj(&__base_info[i], *obj_ptr);
+        if (*__base_info[i].__base_type == *target_type) {
+            if (found_subobj == nullptr) {
+                found_subobj = base_subobj;
+            }
+            else {
+                if (found_subobj != base_subobj) {
+                    // ambiguous
+                    return false;
+                }
+            }
+        }
+        else {
+            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj, &found_subobj)) {
+                return false;
+            }
+        }
+    }
+
+    if (found_subobj) {
+        *obj_ptr = found_subobj;
+        return true;
+    }
+
+    return false;
+}
+
+bool __vmi_class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
+            void *current_subobj, void **found_subobj) const noexcept
+{
+    for (unsigned i = 0; i < __base_count; ++i) {
+        void *base_subobj = get_base_subobj(&__base_info[i], current_subobj);
+        if (*__base_info[i].__base_type == *target_type) {
+            if (*found_subobj == nullptr) {
+                *found_subobj = base_subobj;
+            }
+            else {
+                if (*found_subobj != base_subobj) {
+                    // ambiguous
+                    return false;
+                }
+            }
+        }
+        else {
+            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj, found_subobj)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 } // namespace __cxxabiv1
