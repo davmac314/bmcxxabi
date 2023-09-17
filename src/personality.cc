@@ -267,20 +267,26 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         // Need to scan language-specific data for the frame. For C++ this is essentially a list of
         // catch() blocks, and cleanup handlers.
         
-        // Specifically:
+        // Specifically the format of the LSDA is:
+        //    (DE = dwarf encoded value, i.e. a u8 encoding indicator followed by encoded value;
+        //     [xyz encoding] = value encoded according to some previous encoding indicator, xyz;
+        //     [table] = a table, format described in table description)
         //
-        // landing pad start = read dwarf encoded ptr; if 0, use function address
-        // read types table encoding (may be DW_EH_PE_omit, i.e. not present)
-        //   if present:
-        //     read encoded ULEB128 
-        //      - it is offset to classInfo (from current address in LSDA, i.e. end of this field)
-        // 
-        //       u8  call site encoding;
-        //  ULEB128  callsiteTableLength  (length in bytes)
-        //           (callsite table)
-        //           (action table)
+        //   LSDA:
+        //       DE   landing pad start; if 0, use function address
+        //       u8   types table encoding (may be DW_EH_PE_omit, i.e. not present)
         //
-        //   call sites:
+        //   if types table encoding indicates table is present:
+        //     ULEB128   offset to classInfo (from current address in LSDA, i.e. end of this
+        //               field). Note that it actually points at the end of the classInfo
+        //               table! See classInfo table below.
+        //
+        //       u8   call site encoding;
+        //  ULEB128   callsiteTableLength  (length in bytes)
+        //  [table]   (callsite table)
+        //  [table]   (action table)
+        //
+        //   call sites (callsite table):
         //      - have a start and length; are non-overlapping, ordered by start
         //     [call site encoding] start offset (from function start)
         //     [call site encoding] length
@@ -288,26 +294,40 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
         //                  ULEB128 actionEntry
         //                            0 = cleanup
         //                            1+ = action table offset + 1 (i.e. 1 = offset 0)
-        
+        //
         //   action table:
         //     Note each entry consists of (potentially) multiple actions, with an end marker
-        //     actions include: handlers, cleanup
+        //     actions include: handlers, cleanup.
+        //
+        //     "Each entry in the action table is a pair of signed LEB128 values":
         //
         //    SLEB128 (int64_t) typeIndex
         //                      > 0:  catch; type specifies the type caught.
         //                            value is a *negated* index which must be multiplied
         //                            by the size of entries (according to encoding)
-        //                            eg 1 = -1 index
+        //                            eg 1 = -1 index from classInfo table pointer.
         //
         //                      < 0: "exception spec".
-        //                           This is a *negated* *byte offset* to a list of types which are
-        //                           allowed to propagate; this represents the "throws(...)" clause
-        //                           from C++98.
+        //                           This is a *negated* *byte offset* from the classInfo table
+        //                           pointer (i.e. from the end of the classInfo table) to a list
+        //                           of types which are allowed to propagate; this represents the
+        //                           "throws(...)" clause from C++98.
+        //
+        //                           The list is a series of ULEB128 entries which each encode a
+        //                           negated index into the classInfo table (eg 1 = -1 index from
+        //                           classInfo table pointer); value of 0 terminates the list.
         //
         //    SLEB128 (int64_t) offset to next action (from this point)
         //                      if 0, end of list
         //
         
+        //   classInfo table:
+        //     The classInfo pointer from the header points (just past) the *end* of this table.
+        //     The encoding of each entry depends on call site encoding field from the header, but
+        //        should be a fixed size; each entry is a pointer to a std::typeinfo object.
+        //     The classInfo table is followed by the "throws(...)" specifications table (see
+        //        description of typeIndex in the action table).
+
         const uint8_t *lsda = (const uint8_t *) _Unwind_GetLanguageSpecificData(context);
         const uintptr_t rIP = _Unwind_GetIP(context) - 1;
         const uintptr_t func_start = _Unwind_GetRegionStart(context);
@@ -402,19 +422,25 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             return _URC_INSTALL_CONTEXT;
                         }
                         
+                        if (actions & _UA_FORCE_UNWIND) {
+                            // Used for thread cancellation or unwind-based longjmp
+                            continue;
+                        }
+
+                        unsigned type_info_sz = size_from_encoding(types_encoding);
+                        if (type_info_sz == 0) abort();
+
+                        uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
+                        __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
+
                         // catch handler for single type?
-                        if (type_info_index > 0 && (actions & _UA_FORCE_UNWIND) == 0) {
-                            unsigned type_info_sz = size_from_encoding(types_encoding);
-                            if (type_info_sz == 0) abort();
-                            
+                        if (type_info_index > 0) {
+
                             const uint8_t *catch_type_p = (types_tbl_ptr - type_info_index * type_info_sz);
-                                    
+
                             std::type_info *catch_type = (std::type_info *)
                                     read_dwarf_encoded_val(catch_type_p, types_encoding);
-                            
-                            uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
-                            __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
-                            
+
                             void * cxx_exception_ptr = (void *)(cxa_exception + 1);
                             if (catch_type->__as_pointer_type() != nullptr) {
                                 // If catch-type is a pointer, handler expects the actual pointer value:
@@ -434,9 +460,34 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                                 return _URC_HANDLER_FOUND;
                             }
                         }
-                        else {
-                            // throw specification
-                            // TODO
+                        else /* (type_info_index < 0) */ {
+                            // throw specification (C++98). This is matched if the exception thrown is *not*
+                            // any from a list of types.
+                            const uint8_t *throw_spec_start = types_tbl_ptr - type_info_index;
+                            uintptr_t ts_index = read_ULEB128(throw_spec_start);
+                            while (ts_index != 0) {
+                                const uint8_t *catch_type_p = (types_tbl_ptr - ts_index * type_info_sz);
+
+                                std::type_info *catch_type = (std::type_info *)
+                                        read_dwarf_encoded_val(catch_type_p, types_encoding);
+
+                                void * cxx_exception_ptr = (void *)(cxa_exception + 1);
+                                if (catch_type->__as_pointer_type() != nullptr) {
+                                    // If catch-type is a pointer, handler expects the actual pointer value:
+                                    cxx_exception_ptr = *(void **)cxx_exception_ptr;
+                                }
+
+                                if (catch_type->__do_catch(cxa_exception->exceptionType, &cxx_exception_ptr, 1)) {
+                                    cxa_exception->adjustedPtr = (void *)(cxa_exception + 1); // un-adjusted!
+                                    cxa_exception->handlerSwitchValue = type_info_index;
+                                    cxa_exception->catchTemp = (void *)(lp_start + lp_offs);
+                                    // The handler should just call __cxa_call_unexpected(), but
+                                    // that's in the hands of the compiler...
+                                    return _URC_HANDLER_FOUND;
+                                }
+
+                                ts_index = read_ULEB128(throw_spec_start);
+                            }
                         }                        
                     }
                     
