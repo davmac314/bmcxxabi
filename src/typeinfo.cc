@@ -51,6 +51,10 @@ public:
 
 __fundamental_type_info::~__fundamental_type_info() {}
 
+class __array_type_info : public std::type_info {};
+class __function_type_info : public std::type_info {};
+class __enum_type_info : public std::type_info {};
+
 
 // __class_type_info : implements type_info for classes with no base classes, and provides a base
 // class for type_info structures representing classes *with* base classes.
@@ -229,6 +233,14 @@ const __pointer_type_info *__pointer_type_info::__as_pointer_type() const noexce
 {
     return this;
 }
+
+class __pointer_to_member_type_info : public __pbase_type_info {
+    public:
+    const __class_type_info *__context;
+};
+
+
+// __vmi_class_type_info: classes using virtual and/or multiple inheritance
 
 // base class info for __vmi_class_type_info
 
