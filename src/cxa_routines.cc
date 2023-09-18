@@ -27,6 +27,7 @@
 
 namespace {
 
+// THREAD-SAFETY : these variables should be thread-local variables
 __cxa_exception *handled_exc_stack_top = nullptr;
 unsigned num_uncaught_exceptions = 0;
 
@@ -178,4 +179,24 @@ void __cxa_rethrow()
     void *cxx_exception = (void *)((uintptr_t)exc + sizeof(__cxa_exception));
     __cxa_begin_catch(cxx_exception);
     std::terminate();
+}
+
+extern "C"
+int __cxa_guard_acquire (int64_t *guard_object)
+{
+    // THREAD-SAFETY : this should acquire a mutex
+    return (*(char *)guard_object) == 0;
+}
+
+extern "C"
+void __cxa_guard_release(int64_t *guard_object)
+{
+    // THREAD-SAFETY : this should release the mutex acquired via __cxa_guard_acquire
+    *guard_object = 1;
+}
+
+extern "C"
+void __cxa_guard_abort(int64_t *guard_object)
+{
+    // THREAD-SAFETY : this should release the mutex acquired via __cxa_guard_acquire
 }
