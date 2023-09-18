@@ -65,10 +65,12 @@ public:
     // current_subobj: the current subobject (within original thrown object) corresponding to a
     // base of this class type
     // *found_subobj: nullptr if not found; otherwise, a candidate subobject
+    // inh_flags: 0x1 = continue search after candidate found (i.e. report ambiguity)
+    //
     // return: false if ambiguity was discovered; true otherwise (*found_subobj is single found
     //         subobject, or null)
     virtual bool __do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
-            void *current_subobj, void **found_subobj) const noexcept;
+            void *current_subobj, void **found_subobj, int inh_flags) const noexcept;
 };
 
 __class_type_info::~__class_type_info() {}
@@ -92,7 +94,7 @@ bool __class_type_info::__do_catch(const std::type_info *thrown_type, void **thr
 }
 
 bool __class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
-            void *current_subobj, void **found_subobj) const noexcept
+            void *current_subobj, void **found_subobj, int inh_flags) const noexcept
 {
     if (__do_upcast(target_type, &current_subobj)) {
         if (*found_subobj != nullptr) {
@@ -245,13 +247,13 @@ public:
     unsigned int __base_count;
     __base_class_type_info __base_info[];
 
-    static const unsigned non_diamond_repeat_mask = 0x1;
+    static const unsigned __non_diamond_repeat_mask = 0x1;
     static const unsigned __diamond_shaped_mask = 0x2;
 
     virtual bool __do_upcast(const __cxxabiv1::__class_type_info *__target_type, void **__obj_ptr)
             const noexcept override;
     virtual bool __do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
-            void *current_subobj, void **found_subobj) const noexcept override;
+            void *current_subobj, void **found_subobj, int inh_flags) const noexcept override;
 };
 
 static void *get_base_subobj(const __base_class_type_info *base_info, void *this_obj)
@@ -280,6 +282,9 @@ bool __vmi_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *tar
         if (*__base_info[i].__base_type == *target_type) {
             if (found_subobj == nullptr) {
                 found_subobj = base_subobj;
+                if (~__flags & __non_diamond_repeat_mask) {
+                    break;
+                }
             }
             else {
                 if (found_subobj != base_subobj) {
@@ -289,8 +294,12 @@ bool __vmi_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *tar
             }
         }
         else {
-            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj, &found_subobj)) {
+            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj,
+                    &found_subobj, __flags)) {
                 return false;
+            }
+            if (found_subobj != nullptr && (~__flags & __non_diamond_repeat_mask)) {
+                break;
             }
         }
     }
@@ -304,7 +313,7 @@ bool __vmi_class_type_info::__do_upcast(const __cxxabiv1::__class_type_info *tar
 }
 
 bool __vmi_class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info *target_type,
-            void *current_subobj, void **found_subobj) const noexcept
+            void *current_subobj, void **found_subobj, int inh_flags) const noexcept
 {
     for (unsigned i = 0; i < __base_count; ++i) {
         if (!(__base_info[i].__offset_flags & __base_class_type_info::__public_mask))
@@ -313,6 +322,9 @@ bool __vmi_class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info 
         if (*__base_info[i].__base_type == *target_type) {
             if (*found_subobj == nullptr) {
                 *found_subobj = base_subobj;
+                if (~inh_flags & __non_diamond_repeat_mask) {
+                    return true;
+                }
             }
             else {
                 if (*found_subobj != base_subobj) {
@@ -322,8 +334,11 @@ bool __vmi_class_type_info::__do_vmi_upcast(const __cxxabiv1::__class_type_info 
             }
         }
         else {
-            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj, found_subobj)) {
+            if (!__base_info[i].__base_type->__do_vmi_upcast(target_type, base_subobj, found_subobj, inh_flags)) {
                 return false;
+            }
+            if (*found_subobj != nullptr && (~inh_flags & __non_diamond_repeat_mask)) {
+                return true;
             }
         }
     }
