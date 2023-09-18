@@ -10,6 +10,8 @@ struct __cxa_exception {
     // So this field isn't documented in the C++ ABI, but LLVM's libunwind includes it with a
     // comment that it's for C++0x exception_ptr support. However it's only included if
     // __LP64__ is defined, which makes no sense at all.
+    // THREAD-SAFETY : if exception_ptr is to be supported in a thread-safe way, this needs to be
+    //                 an atomic counter.
     size_t referenceCount;
     
     std::type_info *exceptionType;
