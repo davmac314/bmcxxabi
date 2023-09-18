@@ -11,8 +11,14 @@ namespace std {
 class type_info {
   public:
     virtual ~type_info();
-    bool operator==(const type_info &other) const noexcept { return this == &other; }
-    bool operator!=(const type_info &other) const noexcept { return this != &other; }
+
+    // The ABI document is a little vague on equality. It does suggest that the intention is
+    // mostly that type_info identity is equality, but incomplete types may need to be compared
+    // by __type_name (though comparison of this by pointer value should be sufficient). I suspect
+    // in practice that type_info identity alone is always enough, but let's play safe.
+    bool operator==(const type_info &other) const noexcept { return this == &other || this->__type_name == other.__type_name; }
+    bool operator!=(const type_info &other) const noexcept { return this != &other && this->__type_name != other.__type_name; }
+
     bool before(const type_info &other) const noexcept { return __type_name < other.__type_name; }
     const char* name() const noexcept { return __type_name; }
 
