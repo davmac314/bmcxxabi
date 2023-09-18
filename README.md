@@ -17,9 +17,9 @@ Specifically, BMCXXABI contains implementations of:
  * the `__cxa_*` routines to deal with exception handling (as documented by the ABI)
  * the `__gxx_personality_v0` C++ "personality" routine of GCC (mostly undocumented)
  * the `std::type_info` class and its ABI-private derived types (as documented by the ABI)
+ * various other `__cxa_*` support routines
  
 It does not currently include:
- * support for function static variable initialisation/destruction
  * support for dynamic_cast
  * implementations of `std::uncaught_exception()`, `std::current_exception()`,
    `std::rethrow_exception(...)`, `std::exception_ptr`.
@@ -40,7 +40,9 @@ This software is absolutely free and you may use it as you wish, without restric
  * use "make OUTDIR=..." to build and produce the resulting library, libcxxabi.a, in the specified
    directory
  * you can set the compiler and build options on the "make" command line, too; check the top-level
-   Makefile for information. 
+   Makefile for information.
+ * the "include" directory should be added to your project's include path (or the contents copied
+   to it). It contains the `<typeinfo>` header. 
 
 ## Requirements
 
@@ -61,8 +63,9 @@ replacements.
 ## Background documentation
 
 For details about the Itanium C++ ABI and the functions provided by BMCXXABI, see:
+ * https://itanium-cxx-abi.github.io/cxx-abi/abi.html
  * https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html
- * https://refspecs.linuxfoundation.org/cxxabi-1.86.html
+ * https://github.com/itanium-cxx-abi/cxx-abi/ (more up-to-date source of above two)
  * https://gitlab.com/x86-psABIs/x86-64-ABI/
 
 Also included is an implementation of `__gxx_personality_v0`, the exception-handling "personality"
@@ -76,12 +79,18 @@ See:
  * https://www.airs.com/blog/archives/464
 
 (The first two are about unwinding more generally, the last link above is more specific to what we are
-doing here). 
+doing here). Also see comments in "personality.cc" (__gxx_personality_v0).
 
 ## Current status
 
  * Only tested on / designed for x86-64 (in principle, various parts should be somewhat portable)
- * throwing/catching some obscure types might cause link errors (incomplete RTTI)
- * Does not support threads, assumes single-threaded application
- * Does not include support for "foreign" (i.e. non-C++) exceptions
+ * Support for exceptions 
+ * Does not support threads, assumes single-threaded application. Known issues for thread support
+   are highlighted in the code via a `// THREAD_SAFETY` comment.
+ * Does not yet include dynamic array creation helpers; using eg. "new int[10]" may cause link-
+   time errors (__cxa_vec_new etc).
+ * Does not yet include support for destruction of static-storage variables; global variables of
+   class type with non-trival destructors may cause link-time errors (__dso_handle, __cxa_atexit).
+ * Does not support demangling API (__cxa_demangle).
+ * Does not include support for any handling of "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang

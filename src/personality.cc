@@ -245,8 +245,13 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
     // The first four bytes are for vendor, CLNG for clang/llvm, GNUC for GCC; we don't really
     // care so just ignore them (technically we should probably check that they match what we
     // set ourselves in _cxa_throw).
-    
-    // TODO do dependent exceptions need special handling?
+    //
+    // Note: it appears that by "rethrowing an exception" ILT means throwing via
+    // std::rethrow_exception (i.e. throwing an exception captured in a std::exception_ptr) and
+    // not a regular "throw;". Since we don't support std::rethrow_exception/exception_ptr (yet?)
+    // then we don't need to worry about it. (The purpose is to apparently create a separate
+    // __cxa_exception object that can be linked into a current-exception stack separately from
+    // the original).
 
     if (actions & _UA_HANDLER_FRAME) {
         // If this is the frame where we found a handler,
