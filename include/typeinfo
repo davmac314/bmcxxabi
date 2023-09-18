@@ -23,13 +23,10 @@ class type_info {
     const char* name() const noexcept { return __type_name; }
 
     // We can add virtual functions for implementation of runtime support including dynamic_cast
-    // and catching exceptions. We'll (mostly) follow the lead from GCC here:
+    // and catching exceptions. We'll (somewhat) follow the lead from GCC here, with __do_catch and
+    // __do_upcast functions.
 
-    // don't need these however, (yet?)
-    // virtual bool __is_pointer_p() const { return false; }
-    // virtual bool __is_function_p() const { return false; }
-
-    // test whether a "catch" clause with *this* type can catch the specified thrown type. The object
+    // Test whether a "catch" clause with *this* type can catch the specified thrown type. The object
     // pointer (thrown_obj) may be adjusted to point to the appropriate base if return is true.
     // "outer indicates the number of outer pointers, and whether they were const qualified".
     // specifically, the number of outer pointers is the number of pointers already matched; bits 1+
@@ -47,13 +44,20 @@ class type_info {
     //   but
     //     cannot be coverted to ptr to ptr to const char
     //
+    // On entry, (*__throw_obj) points to the thrown object. This value will be adjusted (if necessary) to
+    // point at the base class subobject. If called for a pointer type (with outer == 1), it will first be
+    // adapted to the thrown pointer value (i.e. the thrown pointer value is retrieved from the object)
+    // which matches the expectations of the handler landing pad.
+    //
+    // Return is true if a catch clause with this type can catch the thrown type; false otherwise
+    // (*__thrown_obj may be altered even if return is false).
     virtual bool __do_catch(const type_info *__thrown_type, void **__thrown_obj, unsigned __outer) const noexcept;
 
+    // Upcast (cast to base) if possible. The given object pointer may be adjusted to correctly
+    // point at the base class subobject.
     virtual bool __do_upcast(const __cxxabiv1::__class_type_info *__target_type, void **__obj_ptr) const noexcept;
 
-    // Not following GCC's lead after this point:
-
-    // Downcast to __pointer_type_info (or return nullptr):
+    // If this type_info represents a pointer type, return this as __pointer_type_info* (otherwise nullptr).
     virtual const __cxxabiv1::__pointer_type_info *__as_pointer_type() const noexcept;
 
   protected:

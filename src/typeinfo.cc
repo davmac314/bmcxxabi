@@ -170,7 +170,16 @@ __pointer_type_info::~__pointer_type_info() { }
 bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **thrown_obj,
         unsigned outer) const noexcept
 {
+    auto fixup_ptr = [&]() {
+        if (outer < 2) {
+            // This is the first level of indirection. The handler will expect the actual pointer
+            // value that was thrown, not the object containing it, so fix that now:
+            *thrown_obj = **(void ***)thrown_obj;
+        }
+    };
+
     if (*thrown_type == *this) {
+        fixup_ptr();
         return true;
     }
 
@@ -196,6 +205,8 @@ bool __pointer_type_info::__do_catch(const std::type_info *thrown_type, void **t
     if (thrown_ptr_type == nullptr) {
         return false;
     }
+
+    fixup_ptr();
 
     if (thrown_ptr_type->__flags != __flags) {
         // If other type has any qualifiers we don't, no match:
