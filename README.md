@@ -23,12 +23,15 @@ architectures.
 ## Features in detail
 
 Specifically, BMCXXABI contains implementations of:
- * the `__cxa_*` routines to deal with exception handling (as documented by the ABI)
- * the `__gxx_personality_v0` C++ exception-handling "personality" routine of GCC (mostly
+ * The `__cxa_*` routines to deal with exception handling (as documented by the ABI)
+ * The `__gxx_personality_v0` C++ exception-handling "personality" routine of GCC (mostly
    undocumented)
- * the `std::type_info` class and its ABI-private derived types (as documented by the ABI)
- * various other (non-exception-related) `__cxa_*` support routines that the compiler may
-   generate calls to (eg. guards for static initialisation).
+ * The `std::type_info` class and its ABI-private derived types (as documented by the ABI)
+ * Various other (non-exception-related) `__cxa_*` support routines that the compiler may
+   generate calls to (eg. guards for static initialisation, registration of destructors for
+   static-storage objects).
+ * Helper routines to run linker-defined static-storage constructors and destructors
+   (initialisers and finalisers).
  
 It does not currently (and there are no current plans to) include:
  * Support for `dynamic_cast`
@@ -42,6 +45,7 @@ This software is absolutely free and you may use it as you wish, without restric
 
 Feature requests are not accepted.
 
+
 ## Use
 
  * Typically you would incorporate the build of BMCXXABI into another project. There is little
@@ -53,16 +57,46 @@ Feature requests are not accepted.
    Makefile for information. Typically you should set the include path so that the build can find
    the correct versions of the required headers.
  * The "include" directory should be added to your project's include path (or the contents copied
-   to it). It contains the `<typeinfo>` header. 
+   to it). It contains the `<typeinfo>` header.
+ * To run static-storage initialisers/constructors, `bmcxxabi_run_init()` should be called at
+   startup (usually, as early as possible). To run destructors at exit, call
+   `bmcxxabi_run_destructors()`.
+
+The `bmcxxabi_run_init`/`bmcxxabi_run_destructors` functions can be declared as follows:
+
+    extern "C" void bmcxxabi_run_init();
+    extern "C" void bmcxxabi_run_destructors();
+
+Additionally, for static storage construction/destruction support, the linker must generate
+appropriate symbols; for the GNU linker this can be done via the following link script commands:
+
+    .init_array : {
+        PROVIDE_HIDDEN (__init_array_start = .);
+        KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+        KEEP (*(.init_array .ctors))
+        PROVIDE_HIDDEN (__init_array_end = .);
+    }
+    
+    .fini_array : {
+        PROVIDE_HIDDEN (__fini_array_start = .);
+        KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
+        KEEP (*(.fini_array .dtors))
+        PROVIDE_HIDDEN (__fini_array_end = .);
+    }
+
+To build without support for running static storage destructors (eg for a kernel that will never
+terminate), build with the `BMCXX_NO_SSD` macro defined (eg via `-DBMCXX_NO_SSD=1`), and do not
+call the `bmcxxabi_run_destructors` function.
+
 
 ## Requirements
 
 In reality, this library is only one piece of the puzzle. You also need:
- * A "libunwind" implementation, including "libunwind.h" header. Checkout out bmunwind.
+ * A "libunwind" implementation, including "libunwind.h" header. Check out bmunwind.
  * Some C++ headers and functions. BMCXXABI source needs (at least basic versions of) the
    following headers:
-   - `cstring`
-   - `cstdlib` (including malloc/free)
+   - `cstring` (including `memcpy`)
+   - `cstdlib` (including `malloc`/`free`)
    - `cstdint`
    - `cstddef`
    - `exception` (for `std::terminate()`)
@@ -77,6 +111,7 @@ In reality, this library is only one piece of the puzzle. You also need:
 This project, "bmunwind", and "libbmcxx" form a trio which together provide support for C++ in
 "bare metal" environments. In theory, you can swap out any of these components with suitable
 replacements.
+
 
 ## Background documentation
 
@@ -98,6 +133,7 @@ See:
 
 (The first two are about unwinding more generally, the last link above is more specific to what we are
 doing here). Also see comments in "personality.cc" (`__gxx_personality_v0`).
+
 
 ## Current status
 

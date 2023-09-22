@@ -1,4 +1,4 @@
-SRCS ::= typeinfo.cc personality.cc cxa_routines.cc
+SRCS ::= typeinfo.cc personality.cc cxa_routines.cc run_static_init.cc run_static_fini.cc static_destructors.cc
 OBJS ::= $(SRCS:.cc=.o)
 
 # sources which need RTTI enabled:
