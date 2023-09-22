@@ -2,7 +2,6 @@
 #include <cstring>
 #include <cstdint>
 #include <exception> // for std::terminate
-#include <new> // for placement new
 
 #include "cxa_exception.h"
 
@@ -70,7 +69,9 @@ void __cxa_throw(void *thrown, std::type_info *tinfo, void (*destructor)(void *)
     uintptr_t cxa_addr = (uintptr_t)thrown - sizeof(__cxa_exception);
     __cxa_exception *cxa_ex = (__cxa_exception *) cxa_addr;
     
-    new(cxa_ex) __cxa_exception;
+    // The following should not be required, as __cxa_exception should have trivial default
+    // construction:
+    //     new(cxa_ex) __cxa_exception;
     
     cxa_ex->referenceCount = 1; // <-- totally undocumented, sigh.
     

@@ -100,7 +100,6 @@ In reality, this library is only one piece of the puzzle. You also need:
    - `cstdint`
    - `cstddef`
    - `exception` (for `std::terminate()`)
-   - `new` (for placement new)
    All of these are provided by libbmcxx, or you can provide your own (or any other)
    implementation. Note that `cstring`, `cstdlib`, `cstdint` and `cstddef` are wrappers around
    similarly-named C headers.
