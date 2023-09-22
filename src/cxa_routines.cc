@@ -1,7 +1,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
-#include <new>
+#include <exception> // for std::terminate
+#include <new> // for placement new
 
 #include "cxa_exception.h"
 
