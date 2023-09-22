@@ -145,8 +145,5 @@ doing here). Also see comments in "personality.cc" (`__gxx_personality_v0`).
    are highlighted in the code via a `// THREAD_SAFETY` comment.
  * Does not yet include dynamic array creation helpers; using eg. "new int[10]" may cause link-
    time errors (`__cxa_vec_new` etc).
- * Does not yet include support for destruction of static-storage variables; global variables of
-   class type with non-trival destructors may cause link-time errors (`__dso_handle`,
-   `__cxa_atexit`).
  * Does not include support for any handling of "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang
