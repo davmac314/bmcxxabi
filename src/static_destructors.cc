@@ -3,8 +3,9 @@
 #include <cstring>
 
 // Fake DSO handle; needs to be defined as it will be referenced by compiler-generated code.
-// Its address will be passed to __cxa_atexit (3rd parameter).
-int __dso_handle = 0;
+// Its address will be passed to __cxa_atexit (3rd parameter). We make it weak to allow for
+// system-provided value to take precedence.
+__attribute__((weak)) int __dso_handle = 0;
 
 
 #ifndef BMCXX_NO_SSD
