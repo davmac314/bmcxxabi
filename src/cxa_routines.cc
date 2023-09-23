@@ -28,6 +28,8 @@
 namespace {
 
 // THREAD-SAFETY : these variables should be thread-local variables
+//  (technically they should be part of __cxa_eh_globals struct, retrieved via __cxa_get_globals or
+//   __cxa_get_globals_fast; we don't implement those).
 __cxa_exception *handled_exc_stack_top = nullptr;
 unsigned num_uncaught_exceptions = 0;
 

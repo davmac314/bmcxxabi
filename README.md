@@ -2,13 +2,13 @@
 
 by Davin McCall - <davmac@davmac.org>
 
-**Work-in-progress! Only for x86-64 at the moment! Not complete!**
-_May be usable and useful in some scenarios; see "current status" below)._
+**BMCXXABI**: _C++ ABI routines for x86-64 baremetal applications using GCC-compatible compiler._
 
 This is an implementation of the support routines specified in the Itanium C++ ABI, designed for
 use in "bare metal" applications - such as kernel code, or UEFI applications - when using GCC or
-a compatible compiler with "dwarf exception handling" (eg GCC on Linux). Using BMCXXABI you can
-write code which throws and catches exceptions in such an application.
+a compatible compiler with "dwarf exception handling" (eg GCC on Linux) for the x86-64 (AMD64)
+architecture. Using BMCXXABI you can write code which throws and catches exceptions in such an
+application, and use various other C++ language features that require runtime support.
 
 Note that the "Itanium" C++ ABI is also used (at least as baseline) for other processor
 architectures.
@@ -16,9 +16,9 @@ architectures.
 ## Key features
 
  * Easy to build and to integrate with a bare-metal project
- * Requires only a few key standard headers/functions
+ * Requires only a few key standard headers/functions to be provided
  * No significant restrictions on use, distribution or modification - no attribution required, and
-   you redistribute the code under another license.
+   you can redistribute the code under the license of your choice.
 
 ## Features in detail
 
@@ -92,7 +92,7 @@ call the `bmcxxabi_run_destructors` function.
 ## Requirements
 
 In reality, this library is only one piece of the puzzle. You also need:
- * A "libunwind" implementation, including "libunwind.h" header. Check out bmunwind.
+ * A "libunwind" implementation, including "libunwind.h" header. Check out [bmunwind](https://github.com/davmac314/bmunwind).
  * Some C++ headers and functions. BMCXXABI source needs (at least basic versions of) the
    following headers:
    - `cstring` (including `memcpy`)
@@ -100,9 +100,9 @@ In reality, this library is only one piece of the puzzle. You also need:
    - `cstdint`
    - `cstddef`
    - `exception` (for `std::terminate()`)
-   All of these are provided by libbmcxx, or you can provide your own (or any other)
-   implementation. Note that `cstring`, `cstdlib`, `cstdint` and `cstddef` are wrappers around
-   similarly-named C headers.
+   All of these are provided by [libbmcxx](https://github.com/davmac314/libbmcxx), or you can
+   provide your own (or another) implementation. Note that `cstring`, `cstdlib`, `cstdint` and
+   `cstddef` are wrappers around similarly-named C headers.
  * Importantly, an implementation of `malloc` and `free`. The Itanium C++ exception model requires
    dynamic allocation when an exception is thrown.
  * An implementation of `std::terminate` (also provided by libbmcxx).
@@ -114,24 +114,51 @@ replacements.
 
 ## Background documentation
 
+The x86-64 processor-specific supplement to the Sys V ABI details a stack unwinding mechanism
+and associated support routines (`_Unwind_XXX`) that can be used to throw and handle exceptions
+(amongst other uses). In essence, the ABI dictates the format of "unwind tables" specify how to
+"unwind" through stack frames for each function in the program; these tables also contain, for
+each function, a pointer to a "personality routine" which can handle language-specific details of
+exception catching or cleanup for stack frames corresponding to the function.
+
+At the simplest level, unwinding a stack frame is just a matter of loading saved register values
+from the stack (the registers and locations are encoded in the unwind tables). For C++, exceptions
+can also be caught, which involves transferring execution to a "landing pad", and if not caught,
+destructors may need to be run (handled via another landing pad) before unwinding continues. 
+
+The `_Unwind` API and unwind table format are specified in the psABI document:
+
+ * https://gitlab.com/x86-psABIs/x86-64-ABI/
+
+However, the specific details of the personality routine are largely undocumented. GCC (and
+compatible compilers such as Clang) generates unwind tables referring to a personality routine
+called `__gxx_personality_v0`. The personality routine uses the "language specific" data, also
+stored in the unwind tables, to determine whether an exception is caught, and if not, whether
+any cleanup is required, for each frame that is unwound. In either case it arranges for execution
+to continue at the appropriate landing pad, with certain specific registers set to values which
+the landing pad uses to determine which exception handler (or cleanup) to jump to.
+
+The compiler does not generate calls to the personality routine, but does generate the unwind
+tables which reference it.
+
+In addition, the C++ ABI defines various helper functions (`__cxa_XXX`) for dealing with
+exceptions (among other things). In fact, of the various `_Unwind_` functions, the compiler will
+generally only generate calls to `_Unwind_Resume` directly; it otherwise uses the `__cxa_`
+functions. It is these `__cxa_` functions, and the `__gxx_personality_v0` routine, that BMCXXABI
+provides.
+
 For details about the Itanium C++ ABI and the functions provided by BMCXXABI, see:
  * https://itanium-cxx-abi.github.io/cxx-abi/abi.html
  * https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html
  * https://github.com/itanium-cxx-abi/cxx-abi/ (more up-to-date source of above two)
- * https://gitlab.com/x86-psABIs/x86-64-ABI/
 
-Also included is an implementation of `__gxx_personality_v0`, the exception-handling "personality"
-routine as implemented by GCC (and LLVM's clang++) when configured for so-called "DWARF exception handling"
-(which isn't actually part of the DWARF specification at all). This is the standard exception handling
-mechanism used on Linux, for instance.
+For details of the `__gxx_personality_v0` implementation, see:
 
-See:
  * https://www.airs.com/blog/archives/460
  * https://www.airs.com/blog/archives/462
  * https://www.airs.com/blog/archives/464
 
-(The first two are about unwinding more generally, the last link above is more specific to what we are
-doing here). Also see comments in "personality.cc" (`__gxx_personality_v0`).
+Also see comments in "personality.cc" (`__gxx_personality_v0`).
 
 
 ## Current status
@@ -144,6 +171,9 @@ doing here). Also see comments in "personality.cc" (`__gxx_personality_v0`).
  * Does not support threads, assumes single-threaded application. Known issues for thread support
    are highlighted in the code via a `// THREAD_SAFETY` comment.
  * Does not yet include dynamic array creation helpers; using eg. "new int[10]" may cause link-
-   time errors (`__cxa_vec_new` etc).
+   time errors (`__cxa_vec_new` etc). In practice it seems rare for the compiler to generate calls
+   to these anyway.
+ * Does not include implementations of `__cxa_get_globals` / `__cxa_get_globals_fast`. Calls to
+   these are not (AFAIK) generated by the compiler.
  * Does not include support for any handling of "foreign" (i.e. non-C++) exceptions
  * Uses various GCC built-ins, should work fine with Clang

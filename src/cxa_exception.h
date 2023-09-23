@@ -7,13 +7,17 @@
 
 struct __cxa_exception { 
 
-    // So this field isn't documented in the C++ ABI, but LLVM's libunwind includes it with a
-    // comment that it's for C++0x exception_ptr support. However it's only included if
-    // __LP64__ is defined, which makes no sense at all.
+    // This field isn't documented in the C++ ABI, but LLVM's libunwind includes it with a
+    // comment that it's for C++0x exception_ptr support.
+    //
     // THREAD-SAFETY : if exception_ptr is to be supported in a thread-safe way, this needs to be
     //                 an atomic counter.
     size_t referenceCount;
     
+    // From this point, structure is specified by the ABI. However, the compiler does not AFAIK
+    // generate code that in any way relies on this structure.
+    // -----------------------------------------
+
     std::type_info *exceptionType;
     void (*exceptionDestructor)(void *);
 
@@ -37,6 +41,7 @@ struct __cxa_exception {
     void *catchTemp;
     void *adjustedPtr;
 
+    // Must be last:
     _Unwind_Exception unwindHeader;
 };
 
