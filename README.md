@@ -68,25 +68,55 @@ The `bmcxxabi_run_init`/`bmcxxabi_run_destructors` functions can be declared as 
     extern "C" void bmcxxabi_run_destructors();
 
 Additionally, for static storage construction/destruction support, the linker must generate
-appropriate symbols; for the GNU linker this can be done via the following link script commands:
+appropriate symbols; for the GNU linker this can be done via the following link script fragment:
 
     .init_array : {
-        PROVIDE_HIDDEN (__init_array_start = .);
+        PROVIDE (__init_array_start = .);
         KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
         KEEP (*(.init_array .ctors))
-        PROVIDE_HIDDEN (__init_array_end = .);
+        PROVIDE (__init_array_end = .);
     }
     
     .fini_array : {
-        PROVIDE_HIDDEN (__fini_array_start = .);
+        PROVIDE (__fini_array_start = .);
         KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
         KEEP (*(.fini_array .dtors))
-        PROVIDE_HIDDEN (__fini_array_end = .);
+        PROVIDE (__fini_array_end = .);
     }
+
+(The output section names are generally not important; it is the `_start` and `_end` symbols which
+the runtime will use to locate the arrays). 
 
 To build without support for running static storage destructors (eg for a kernel that will never
 terminate), build with the `BMCXX_NO_SSD` macro defined (eg via `-DBMCXX_NO_SSD=1`), and do not
 call the `bmcxxabi_run_destructors` function.
+
+For exceptions support, you should use `--eh-frame-hdr` on the `ld` command line when linking, and
+additionally need something like the following in your linker script:
+
+    .eh_frame_hdr : {
+        PROVIDE (__eh_frame_hdr_start = .);
+        KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
+        PROVIDE (__eh_frame_hdr_end = .);
+    }
+
+    .eh_frame : {
+        PROVIDE (__eh_frame_start = .);
+        KEEP(*(.eh_frame .eh_frame.*))
+        PROVIDE (__eh_frame_end = .);
+        LONG (0);
+    }
+    
+    .gcc_except_table   : { *(.gcc_except_table .gcc_except_table.*) }
+
+In this case some of the output section names are important: binutils' `ld` will seemingly not
+honour `--eh-frame-hdr` if it cannot see an output section named `.eh_frame`, and the section it
+generates will always be put in `.eh_frame_hdr`.
+
+(Strictly speaking, the use of `--eh-frame-hdr` and the inclusion of the `.eh_frame_hdr` section
+that it generates are not required, if the libunwind implementation can operate without that
+section; the `.eh_frame_hdr` section is an optimisation, providing a sorted table of entries in
+the `.eh_frame` sections, so that it can be binary-searched).
 
 
 ## Requirements
