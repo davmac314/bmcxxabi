@@ -429,16 +429,21 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                             return _URC_INSTALL_CONTEXT;
                         }
                         
+                        __cxa_exception *cxa_exception;
+                        unsigned type_info_sz;
+
                         if (actions & _UA_FORCE_UNWIND) {
                             // Used for thread cancellation or unwind-based longjmp
-                            continue;
+                            goto next_action_entry;
                         }
 
-                        unsigned type_info_sz = size_from_encoding(types_encoding);
-                        if (type_info_sz == 0) abort();
+                        {
+                            type_info_sz = size_from_encoding(types_encoding);
+                            if (type_info_sz == 0) abort();
 
-                        uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
-                        __cxa_exception *cxa_exception = (__cxa_exception *) cxa_exception_addr;
+                            uintptr_t cxa_exception_addr = (uintptr_t)unwind_exc - offsetof(__cxa_exception, unwindHeader);
+                            cxa_exception = (__cxa_exception *) cxa_exception_addr;
+                        }
 
                         // catch handler for single type?
                         if (type_info_index > 0) {
@@ -487,6 +492,8 @@ _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions, ui
                                 ts_index = read_ULEB128(throw_spec_start);
                             }
                         }
+
+                        next_action_entry:
 
                         // The next value we read is an offset from the current position in the
                         // action entry table, so we need to avoid modifying the current position
