@@ -1,8 +1,6 @@
 #include <cstdint>
 
-namespace {
 struct opaque;
-}
 
 // These should be defined via linker script
 extern opaque *__fini_array_start;

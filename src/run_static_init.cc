@@ -1,11 +1,9 @@
 #include <cstdint>
 
-namespace {
 struct opaque;
-}
 
-extern opaque *__init_array_start;
-extern opaque *__init_array_end;
+extern opaque __init_array_start;
+extern opaque __init_array_end;
 
 extern "C"
 void bmcxxabi_run_init()
