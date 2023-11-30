@@ -25,7 +25,7 @@ namespace {
 enum {
   DW_EH_PE_absptr = 0,  // (not relative)
   
-  // value encodings  
+  // value encodings (mask 0x0f), may be 0 (absptr)
   DW_EH_PE_uleb128 = 1,  // variable-length unsigned
   DW_EH_PE_udata2 = 2,   // 2-byte unsigned
   DW_EH_PE_udata4 = 3,   // 4-byte unsigned
@@ -36,14 +36,15 @@ enum {
   DW_EH_PE_sdata4 = 11,  // 4-byte signed
   DW_EH_PE_sdata8 = 12,  // 8-byte signed
 
-  // What is it relative to?
+  // What is it relative to (mask 0x70)? may be 0 (absolute)
   DW_EH_PE_pcrel = 0x10,
   DW_EH_PE_textrel = 0x20,
   DW_EH_PE_datarel = 0x30,
   DW_EH_PE_funcrel = 0x40,
   DW_EH_PE_aligned = 0x50,  // ??
   
-  DW_EH_PE_indirect = 0x80, // value is indirect, i.e. specifies address holding value
+  // "indirect" bit: value is indirect, i.e. specifies address holding value
+  DW_EH_PE_indirect = 0x80,
   
   DW_EH_PE_omit = 0xFF  // no value
 };
@@ -112,6 +113,10 @@ uintptr_t read_dwarf_encoded_val(const uint8_t *& p, uint8_t encoding) noexcept
     uintptr_t val;
     
     switch (encoding & 0x0Fu) {
+    case DW_EH_PE_absptr:
+        // absolute, not-relative value (maybe can still be indirect?)
+        val = (uintptr_t) read_val<uint64_t>(p);
+        break;
     case DW_EH_PE_uleb128:
         val = read_ULEB128(p);
         break;
@@ -188,6 +193,7 @@ unsigned size_from_encoding(uint8_t encoding) noexcept
         break;
     case DW_EH_PE_udata8:
     case DW_EH_PE_sdata8:
+    case DW_EH_PE_absptr:
         val = 8;
         break;
     default:
